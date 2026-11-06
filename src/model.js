@@ -11,6 +11,7 @@ export function valid(plan) {
   if (!plan.categories.some(c => c.id === 'core') || !plan.categories.some(c => c.id === 'unassigned')) return false;
   if (!plan.terms.every(t => t && text(t.id, 64) && text(t.name, 50) && Number.isInteger(t.year) && t.year >= 1 && t.year <= 12)) return false;
   if (!plan.courses.every(c => c && text(c.id, 64) && text(c.name, 120) && number(c.credits, 30) && GRADES.includes(c.grade) && (c.code === undefined || typeof c.code === 'string' && c.code.length <= 30) && (c.note === undefined || typeof c.note === 'string' && c.note.length <= 250) && plan.categories.some(x => x.id === c.category) && plan.terms.some(x => x.id === c.term))) return false;
+  if (plan.honors !== undefined && (!plan.honors || ![3.65, 3.25].includes(plan.honors.target) || !(plan.honors.remainingCredits === null || number(plan.honors.remainingCredits, 1000)))) return false;
   return unique(plan.courses) && unique(plan.terms) && unique(plan.categories) && new TextEncoder().encode(JSON.stringify(plan)).length <= 900000;
 }
 

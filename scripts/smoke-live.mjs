@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 import { usernameEmail } from '../src/identity.js';
 import { authPassword } from '../src/password.js';
 import { SEED } from '../src/seed.js';
+import { COURSE_GROUPS, matchesCourse } from '../src/planning.js';
 
 const project = process.env.SMOKE_PROJECT_REF;
 const origin = process.env.SMOKE_ORIGIN || 'http://127.0.0.1:4174';
@@ -65,10 +66,32 @@ try {
   await a.setViewportSize({ width: 390, height: 844 });
   assert.ok(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await a.setViewportSize({ width: 1440, height: 1000 });
+  const summary = await a.locator('#stats').textContent();
+  for (const group of COURSE_GROUPS) {
+    await a.locator('#category-filter').selectOption(group.id);
+    assert.equal(await a.locator('.course').count(), SEED.courses.filter(c => matchesCourse(c, { group: group.id })).length);
+    assert.equal(await a.locator('#stats').textContent(), summary, 'filter must not change GPAX');
+  }
+  await a.locator('#category-filter').selectOption('required');
+  await a.locator('#search').fill('COMP');
+  await a.locator('[data-year="4"]').click();
+  const fourth = new Set(SEED.terms.filter(t => t.year === 4).map(t => t.id));
+  assert.equal(await a.locator('.course').count(), SEED.courses.filter(c => fourth.has(c.term) && matchesCourse(c, { group: 'required', query: 'COMP' })).length);
+  await a.locator('#category-filter').selectOption('all'); await a.locator('#search').fill(''); await a.locator('[data-year="all"]').click();
+  await a.locator('#honors-remaining').fill('12'); await a.locator('#honors-remaining').press('Tab');
+  await a.locator('[data-honors-target="3.25"]').click();
+  await a.waitForFunction(() => document.querySelector('#save-status').dataset.kind === 'saved');
+  const settings = await admin.from('study_plans').select('data').eq('user_id', ids[0]).single();
+  assert.deepEqual(settings.data.data.honors, { target: 3.25, remainingCredits: 12 });
+  await a.screenshot({ path: '/tmp/grade-garden-honors.png' });
   await a.locator('[data-grade=c0]').selectOption('A');
   await a.waitForFunction(() => document.querySelector('#save-status').dataset.kind === 'saved');
   await login(b, accounts[0]);
   assert.equal(await b.locator('[data-grade=c0]').inputValue(), 'A');
+  assert.equal(await b.locator('#honors-remaining').inputValue(), '12');
+  assert.equal(await b.locator('[data-honors-target="3.25"]').getAttribute('aria-pressed'), 'true');
+  await b.locator('#honors-auto').click(); await b.waitForFunction(() => document.querySelector('#save-status').dataset.kind === 'saved');
+  assert.equal(await b.locator('#honors-remaining').inputValue(), String(SEED.courses.filter(c=>['','I'].includes(c.grade)&&c.name!=='ENG PRACTICE'&&c.id!=='c0').reduce((n,c)=>n+c.credits,0)));
   await b.locator('#logout').click(); await b.locator('#account-screen').waitFor({ state: 'visible' });
   await login(b, accounts[1]);
   assert.equal(await b.locator('[data-grade=c0]').inputValue(), '');
@@ -82,7 +105,7 @@ try {
   const guest = createClient(url, anon, { auth: { persistSession: false } });
   assert.ok((await guest.from('study_plans').select('*')).error);
   assert.deepEqual(errors, []);
-  console.log('PASS LIVE: four-character passwords, personalized greeting, eight semesters, summer merge, full credit labels, GPAX, mobile layout, cloud save and account isolation.');
+  console.log('PASS LIVE: honors targets and cross-device settings, automatic remaining credits, broad-group/year/search filters, unchanged GPAX under filtering, four-character login, migration, mobile layout and account isolation.');
 } finally {
   await browser?.close();
   for (const id of ids) {

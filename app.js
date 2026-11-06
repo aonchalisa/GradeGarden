@@ -2,11 +2,12 @@ import { updatePlan } from './src/plan-updates.js';
 import { SEED } from './src/seed.js';
 import { POINTS, GRADES, valid, metrics } from './src/model.js';
 import { setupAccount } from './src/account.js';
+import { COURSE_GROUPS, courseGroup, groupProgress, matchesCourse, honorsProjection, requiredGpaText } from './src/planning.js';
 import './style.css';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fresh=()=>structuredClone(SEED);
-let state=fresh(), year='all',query='',editing=null,dragged=null;
+let state=fresh(), year='all',query='',group='all',editing=null,dragged=null;
 let account;
 function fmt(n){return Number(n).toLocaleString('en-US',{maximumFractionDigits:2});}
 function gpa(n){return n===null?'—':n.toFixed(2);}
@@ -15,21 +16,48 @@ function save(){account?.save(state);render();}
 function cat(id){return state.categories.find(c=>c.id===id);}
 function gradeOptions(selected){return GRADES.map(g=>`<option value="${g}" ${g===selected?'selected':''}>${g||'—'}</option>`).join('');}
 function render(){
- const m=metrics(state.courses),complete=state.categories.filter(c=>c.id!=='unassigned'&&metrics(state.courses.filter(x=>x.category===c.id)).earned>=c.min).length,totalCats=state.categories.filter(c=>c.id!=='unassigned').length;
+ const m=metrics(state.courses),complete=COURSE_GROUPS.filter(g=>g.id!=='unassigned'&&groupProgress(state,g).complete).length,totalCats=COURSE_GROUPS.filter(g=>g.id!=='unassigned').length;
  const sumMin=state.categories.reduce((s,c)=>s+c.min,0),allRequirements=complete===totalCats&&m.earned>=state.target;
  $('#stats').innerHTML=[['GPAX',gpa(m.gpa),'คำนวณจาก '+fmt(m.gpaCredits)+' หน่วยกิต','✧'],['หน่วยกิตที่ผ่าน',fmt(m.earned)+` <small>/ ${fmt(state.target)}</small>`,allRequirements?'ครบตามเกณฑ์ที่ตั้งไว้ ♡':'ยังขาดอีก '+fmt(Math.max(0,state.target-m.earned))+' หน่วยกิตจากยอดรวม','♡'],['หน่วยกิตในแผน',fmt(m.credits),state.courses.length+' วิชา · '+state.terms.length+' เทอม','▤'],['หมวดที่ครบแล้ว',complete+` <small>/ ${totalCats}</small>`,'นับเฉพาะหน่วยกิตที่ผ่าน','✿']].map(([label,value,bottom,icon])=>`<article class="stat"><span class="stat-icon">${icon}</span><div class="stat-label">${label}</div><div class="stat-value">${value}</div><div class="stat-bottom">${bottom}</div></article>`).join('');
- $('#requirements').innerHTML=state.categories.map(c=>{let x=metrics(state.courses.filter(x=>x.category===c.id));if(c.id==='unassigned'&&!x.credits)return '';let extra=x.earned-c.min;return `<div class="requirement"><div class="req-head"><span>${esc(c.name)}</span><b>${fmt(x.earned)} <span style="color:var(--muted);font-weight:400">/ ${c.id==='unassigned'?'—':fmt(c.min)}</span></b></div><div class="track"><span style="width:${c.min?Math.min(100,x.earned/c.min*100):0}%;background:${c.color}"></span></div><div class="req-status">${c.id==='unassigned'?'เลือกหมวดให้วิชาเหล่านี้':extra>=0?'✓ ครบแล้ว'+(extra?' · เกิน '+fmt(extra)+' หน่วยกิต':''):'ขาด '+fmt(-extra)+' หน่วยกิต'} <span>· ในแผน ${fmt(x.credits)}</span></div></div>`;}).join('');
+ $('#requirements').innerHTML=COURSE_GROUPS.map(g=>{
+   const x=groupProgress(state,g);
+   if(g.id==='unassigned'&&!state.courses.some(c=>courseGroup(c.category).id===g.id))return '';
+   const status=g.id==='unassigned'?'เลือกหมวดให้วิชาเหล่านี้':x.complete?'✓ ครบแล้ว'+(x.earned>x.minimum?' · เกิน '+fmt(x.earned-x.minimum)+' หน่วยกิต':''):'ขาด'+(x.earned>=x.minimum?'ในหมวดย่อย':'')+' '+fmt(x.missing)+' หน่วยกิต';
+   const details=x.categories.length>1?`<details class="subcategories"><summary>ดูหมวดย่อย ${x.categories.length} หมวด</summary>${x.categories.map(c=>{const earned=metrics(state.courses.filter(x=>x.category===c.id)).earned;return `<div class="subcategory"><span>${esc(c.name)}</span><b>${fmt(earned)} / ${fmt(c.min)}</b></div>`;}).join('')}</details>`:'';
+   return `<div class="requirement"><div class="req-head"><span>${g.name}</span><b>${fmt(x.earned)} <span style="color:var(--muted);font-weight:400">/ ${g.id==='unassigned'?'—':fmt(x.minimum)}</span></b></div><div class="track"><span style="width:${x.minimum?Math.min(100,x.earned/x.minimum*100):0}%;background:${g.color}"></span></div><div class="req-status">${status} · ในแผน ${fmt(x.credits)}</div>${details}</div>`;
+ }).join('');
+ renderHonors();
+ const visibleCourses=state.courses.filter(c=>(year==='all'||state.terms.find(t=>t.id===c.term).year===+year)&&matchesCourse(c,{query,group}));
+ $('#filter-result').textContent=`${visibleCourses.length} วิชา · GPA / GPAX คิดจากทุกวิชา`;
  const verify=state.courses.filter(c=>c.verify).length;
  $('#source-note').textContent=`มี ${verify} วิชารอตรวจข้อมูล${sumMin!==state.target?' · ขั้นต่ำรายหมวดรวม '+fmt(sumMin)+' แต่เป้าหมายรวม '+fmt(state.target)+' หน่วยกิต':''}`;
  $('#years').innerHTML=[['all','ทุกปี'],...Array.from(new Set(state.terms.map(t=>t.year))).sort((a,b)=>a-b).map(y=>[String(y),'ปี '+y])].map(([id,name])=>`<button data-year="${id}" class="${year===id?'active':''}" aria-pressed="${year===id}">${name}</button>`).join('');
  let cumulative=[];
- $('#terms').innerHTML=state.terms.map((t,i)=>{const courses=state.courses.filter(c=>c.term===t.id),m=metrics(courses);cumulative.push(...courses);const cg=metrics(cumulative);if(year!=='all'&&t.year!==+year)return '';const filtered=courses.filter(c=>(c.name+' '+(c.code||'')).toLowerCase().includes(query));return `<article class="term" data-term="${esc(t.id)}"><div class="term-head"><div class="term-title-row"><h3>${esc(t.name)}</h3><span class="term-number">${String(i+1).padStart(2,'0')}</span></div><div class="term-metrics"><span>GPA <b>${gpa(m.gpa)}</b></span><span>GPAX <b>${gpa(cg.gpa)}</b></span><span>หน่วยกิต <b>${fmt(m.credits)}</b></span><span>ผ่าน <b>${fmt(m.earned)}</b></span></div></div><div class="course-list">${filtered.map(c=>`<div class="course" draggable="true" data-course="${esc(c.id)}" style="--category:${cat(c.category).color}"><span class="handle" aria-hidden="true">⠿</span><button class="course-main" data-edit="${esc(c.id)}" aria-label="แก้ไข ${esc(c.name)}"><span class="course-name">${esc(c.name)}</span><span class="course-meta">${esc(cat(c.category).name)} · ${fmt(c.credits)} หน่วยกิต ${c.verify?'<span class="verify">⚑ ตรวจข้อมูล</span>':''}</span></button><select class="grade" aria-label="เกรด ${esc(c.name)}" data-grade="${esc(c.id)}">${gradeOptions(c.grade)}</select></div>`).join('')||`<div class="empty">${query?'ไม่พบวิชาที่ค้นหา':'วางวิชาในเทอมนี้ได้เลย ♡'}</div>`}</div><button class="term-add" data-add="${esc(t.id)}">＋ เพิ่มวิชาในเทอมนี้</button></article>`;}).join('');
+ $('#terms').innerHTML=state.terms.map((t,i)=>{const courses=state.courses.filter(c=>c.term===t.id),m=metrics(courses);cumulative.push(...courses);const cg=metrics(cumulative);if(year!=='all'&&t.year!==+year)return '';const filtered=courses.filter(c=>matchesCourse(c,{query,group}));return `<article class="term" data-term="${esc(t.id)}"><div class="term-head"><div class="term-title-row"><h3>${esc(t.name)}</h3><span class="term-number">${String(i+1).padStart(2,'0')}</span></div><div class="term-metrics"><span>GPA <b>${gpa(m.gpa)}</b></span><span>GPAX <b>${gpa(cg.gpa)}</b></span><span>หน่วยกิต <b>${fmt(m.credits)}</b></span><span>ผ่าน <b>${fmt(m.earned)}</b></span></div></div><div class="course-list">${filtered.map(c=>`<div class="course" draggable="true" data-course="${esc(c.id)}" style="--category:${cat(c.category).color}"><span class="handle" aria-hidden="true">⠿</span><button class="course-main" data-edit="${esc(c.id)}" aria-label="แก้ไข ${esc(c.name)}"><span class="course-name">${esc(c.name)}</span><span class="course-meta">${courseGroup(c.category).name}${courseGroup(c.category).name!==cat(c.category).name?' · '+esc(cat(c.category).name):''} · ${fmt(c.credits)} หน่วยกิต ${c.verify?'<span class="verify">⚑ ตรวจข้อมูล</span>':''}</span></button><select class="grade" aria-label="เกรด ${esc(c.name)}" data-grade="${esc(c.id)}">${gradeOptions(c.grade)}</select></div>`).join('')||`<div class="empty">${query||group!=='all'?'ไม่พบวิชาในตัวกรองนี้':'วางวิชาในเทอมนี้ได้เลย ♡'}</div>`}</div><button class="term-add" data-add="${esc(t.id)}">＋ เพิ่มวิชาในเทอมนี้</button></article>`;}).join('');
  
 }
-function openCourse(id,term){editing=id||null;const c=id?state.courses.find(x=>x.id===id):{name:'',code:'',credits:3,grade:'',category:'core',term:term||state.terms[0].id,note:'',verify:false};const f=$('#course-form');$('#dialog-title').textContent=id?'แก้ไขวิชา':'เพิ่มวิชาใหม่';f.elements.category.innerHTML=state.categories.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');f.elements.term.innerHTML=state.terms.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');f.elements.grade.innerHTML=gradeOptions(c.grade);for(const key of ['name','code','credits','grade','category','term','note'])f.elements[key].value=c[key]??'';f.elements.verify.checked=!!c.verify;$('#delete-course').hidden=!id;$('#course-dialog').showModal();}
+function openCourse(id,term){editing=id||null;const c=id?state.courses.find(x=>x.id===id):{name:'',code:'',credits:3,grade:'',category:'core',term:term||state.terms[0].id,note:'',verify:false};const f=$('#course-form');$('#dialog-title').textContent=id?'แก้ไขวิชา':'เพิ่มวิชาใหม่';f.elements.category.innerHTML=COURSE_GROUPS.map(g=>`<optgroup label="${g.name}">${state.categories.filter(x=>courseGroup(x.id).id===g.id).map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</optgroup>`).join('');f.elements.term.innerHTML=state.terms.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');f.elements.grade.innerHTML=gradeOptions(c.grade);for(const key of ['name','code','credits','grade','category','term','note'])f.elements[key].value=c[key]??'';f.elements.verify.checked=!!c.verify;$('#delete-course').hidden=!id;$('#course-dialog').showModal();}
+function renderHonors(){
+ const projection=honorsProjection(state), selected=state.honors?.target??3.65;
+ $('#honors-remaining').value=projection.remaining;
+ $('#honors-goals').innerHTML=projection.goals.map(goal=>{
+   let result, status;
+   if(!projection.remaining){result=goal.currentReached?'GPAX ปัจจุบันถึงเป้า':'GPAX ปัจจุบันยังไม่ถึงเป้า';status='ไม่มีหน่วยกิตที่เหลือที่คิดเกรดในจำนวนที่ใช้คำนวณ';}
+   else{result=`ต้องทำ GPA เฉลี่ย <strong>${requiredGpaText(goal.required)}</strong>`;status=goal.reachable?'ในหน่วยกิตที่เหลือ เพื่อจบตามเป้า GPAX นี้':'สูงกว่า 4.00 จึงยังไปไม่ถึงเป้าด้วยหน่วยกิตที่เหลือเท่านี้';}
+   return `<button type="button" class="honors-goal ${selected===goal.target?'selected':''} ${goal.reachable?'reachable':'unreachable'}" data-honors-target="${goal.target}" aria-pressed="${selected===goal.target}"><span class="honors-name">${goal.name}<span class="goal-check">${selected===goal.target?'✓ เป้าที่เลือก':'เลือกเป้านี้'}</span></span><span class="honors-target">GPAX ${goal.target.toFixed(2)}</span><span class="honors-required">${result}</span><span class="honors-status">${status}</span></button>`;
+ }).join('');
+ const maximum=projection.maxGpax===null?'—':projection.maxGpax.toFixed(2);
+ $('#honors-basis').textContent=`เกรดที่กรอกแล้ว ${fmt(projection.gradedCredits)} หน่วยกิต · ยังไม่ออกเกรดตามแผน ${fmt(projection.plannedRemaining)} หน่วยกิต · ${state.honors?.remainingCredits!=null?'ใช้จำนวนที่กำหนดเอง':'ใช้จำนวนตามแผน'} · ถ้าที่เหลือได้ A ทั้งหมด GPAX สูงสุด ${maximum}${projection.needsReview?' · มีวิชารอตรวจหน่วยกิต':''}`;
+}
+function setHonors(changes){state.honors={target:state.honors?.target??3.65,remainingCredits:state.honors?.remainingCredits??null,...changes};save();}
+$('#honors-goals').onclick=e=>{const b=e.target.closest('[data-honors-target]');if(b)setHonors({target:Number(b.dataset.honorsTarget)});};
+$('#honors-remaining').onchange=e=>{if(!e.target.value||!e.target.checkValidity()){renderHonors();return;}setHonors({remainingCredits:Number(e.target.value)});};
+$('#honors-auto').onclick=()=>setHonors({remainingCredits:null});
 $('#add-course').onclick=()=>openCourse();
 $('#years').onclick=e=>{const b=e.target.closest('[data-year]');if(b){year=b.dataset.year;render();}};
 $('#search').oninput=e=>{query=e.target.value.toLowerCase().trim();render();};
+$('#category-filter').innerHTML='<option value="all">ทุกหมวด</option>'+COURSE_GROUPS.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
+$('#category-filter').onchange=e=>{group=e.target.value;render();};
 $('#terms').onclick=e=>{const edit=e.target.closest('[data-edit]'),add=e.target.closest('[data-add]');if(edit)openCourse(edit.dataset.edit);if(add)openCourse(null,add.dataset.add);};
 $('#terms').onchange=e=>{if(e.target.matches('[data-grade]')){state.courses.find(c=>c.id===e.target.dataset.grade).grade=e.target.value;save();}};
 $('#course-form').onsubmit=e=>{e.preventDefault();const f=e.target;const c={id:editing||crypto.randomUUID(),name:f.elements.name.value.trim(),code:f.elements.code.value.trim(),credits:Number(f.elements.credits.value),grade:f.elements.grade.value,category:f.elements.category.value,term:f.elements.term.value,note:f.elements.note.value.trim(),verify:f.elements.verify.checked};if(!c.name)return;if(editing)state.courses[state.courses.findIndex(x=>x.id===editing)]=c;else state.courses.push(c);$('#course-dialog').close();save();toast('บันทึกวิชาแล้ว ♡');};
@@ -47,4 +75,4 @@ function exportPlan(){const blob=new Blob([JSON.stringify(state,null,2)],{type:'
 $('#export').onclick=exportPlan;
 $('#import').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>2e6)throw Error();let parsed=JSON.parse(await file.text());if(!valid(parsed))throw Error();parsed=updatePlan(parsed);if(confirm('นำเข้าข้อมูลสำรองแทนแผนปัจจุบัน? แนะนำให้สำรองแผนเดิมก่อน')){state=parsed;year='all';save();toast('นำเข้าข้อมูลแล้ว');}}catch{toast('ไฟล์ไม่ถูกต้อง เลือกไฟล์ JSON ที่สำรองจากเว็บนี้');}e.target.value='';};
 render();
-account=setupAccount({fresh,valid,onPlan(plan){state=structuredClone(plan);year='all';query='';$('#search').value='';render();},getPlan:()=>structuredClone(state),exportPlan,toast});
+account=setupAccount({fresh,valid,onPlan(plan){state=structuredClone(plan);year='all';query='';group='all';$('#category-filter').value='all';$('#search').value='';render();},getPlan:()=>structuredClone(state),exportPlan,toast});
