@@ -1,4 +1,4 @@
-export const SEED = {
+const TEMPLATE = {
   "terms": [
     {
       "id": "t0",
@@ -706,3 +706,6 @@ export const SEED = {
   ],
   "target": 138
 };
+
+import { updatePlan } from "./plan-updates.js";
+export const SEED = updatePlan(TEMPLATE);

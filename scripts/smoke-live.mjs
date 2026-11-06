@@ -66,6 +66,26 @@ try {
   await a.setViewportSize({ width: 390, height: 844 });
   assert.ok(await a.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
   await a.setViewportSize({ width: 1440, height: 1000 });
+  assert.equal(await a.locator('#gened-progress').getByText('0 / 4 วิชา',{exact:true}).count(),1);
+  await a.locator('#settings').click();
+  assert.equal(await a.locator('[name=genEdMinCourses]').inputValue(),'4');
+  assert.equal(await a.locator('.settings-su h3').textContent(),'S/U');
+  assert.ok((await a.locator('#settings-warning').textContent()).includes('137'));
+  await a.locator('#settings-dialog [data-close]').click();
+  const gpaxBeforeSu=await a.locator('#stats .stat-value').first().textContent();
+  await a.locator('[data-edit=c48]').click();
+  assert.equal(await a.locator('[name=gradingMode]').inputValue(),'su');
+  assert.equal(await a.locator('[name=isGenEd]').isChecked(),true);
+  await a.locator('[name=credits]').fill('3');await a.locator('#course-form [name=grade]').selectOption('S');
+  await a.locator('#course-form button[type=submit]').click();
+  await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.equal(await a.locator('#stats .stat-value').first().textContent(),gpaxBeforeSu);
+  assert.equal(await a.locator('#gened-progress').getByText('1 / 4 วิชา',{exact:true}).count(),1);
+  assert.equal(await a.locator('.su-course-section [data-course=c48]').count(),1);
+  await a.locator('#category-filter').selectOption('su');
+  assert.equal(await a.locator('.course').count(),5);
+  assert.equal(await a.locator('.course-list > .course').count(),0);
+  await a.locator('#category-filter').selectOption('all');
   const summary = await a.locator('#stats').textContent();
   for (const group of COURSE_GROUPS) {
     await a.locator('#category-filter').selectOption(group.id);
@@ -89,6 +109,8 @@ try {
   await login(b, accounts[0]);
   assert.equal(await b.locator('[data-grade=c0]').inputValue(), 'A');
   assert.equal(await b.locator('#honors-remaining').inputValue(), '12');
+  assert.equal(await b.locator('.su-course-section [data-grade=c48]').inputValue(),'S');
+  assert.equal(await b.locator('#gened-progress').getByText('1 / 4 วิชา',{exact:true}).count(),1);
   assert.equal(await b.locator('[data-honors-target="3.25"]').getAttribute('aria-pressed'), 'true');
   await b.locator('#honors-auto').click(); await b.waitForFunction(() => document.querySelector('#save-status').dataset.kind === 'saved');
   assert.equal(await b.locator('#honors-remaining').inputValue(), String(SEED.courses.filter(c=>['','I'].includes(c.grade)&&c.name!=='ENG PRACTICE'&&c.id!=='c0').reduce((n,c)=>n+c.credits,0)));
@@ -105,7 +127,7 @@ try {
   const guest = createClient(url, anon, { auth: { persistSession: false } });
   assert.ok((await guest.from('study_plans').select('*')).error);
   assert.deepEqual(errors, []);
-  console.log('PASS LIVE: honors targets and cross-device settings, automatic remaining credits, broad-group/year/search filters, unchanged GPAX under filtering, four-character login, migration, mobile layout and account isolation.');
+  console.log('PASS LIVE: four GenEd course requirement, separate SU headings/filter, SU credits counted once without changing GPAX, saved grading mode/GenEd flag, honors and cross-device persistence.');
 } finally {
   await browser?.close();
   for (const id of ids) {

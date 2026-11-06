@@ -2,6 +2,17 @@
 // Applies to existing cloud plans, offline drafts and imported backups as well.
 export function updatePlan(input) {
   const plan = structuredClone(input);
+  plan.genEdMinCourses ??= 4;
+  const genEdNames = new Set(['FUND ORAL BIO HLTH', 'MGT PUB DISASTER', 'GENED']);
+  const suNames = new Set(['FUND ORAL BIO HLTH', 'MGT PUB DISASTER', 'SE LAB', 'GENED']);
+  for (const course of plan.courses) {
+    course.isGenEd ??= genEdNames.has(course.name.trim().toUpperCase());
+    if (course.isGenEd && course.category === 'unassigned' && course.id === 'c20' && course.name.trim().toUpperCase() === 'FUND ORAL BIO HLTH') course.category = 'gen';
+    if (course.gradingMode === undefined) {
+      const hasLetterGrade = ['A','B+','B','C+','C','D+','D','F'].includes(course.grade);
+      course.gradingMode = !hasLetterGrade && (['S','U'].includes(course.grade) || suNames.has(course.name.trim().toUpperCase())) ? 'su' : 'letter';
+    }
+  }
   const summer = plan.terms.find(t => t.id === 't6' && t.year === 3 && t.name === 'ปี 3 / ฤดูร้อน');
   if (!summer) return plan;
   let destination = plan.terms.find(t => t.year === 4 && /^ปี\s*4\s*\/\s*เทอม\s*1$/.test(t.name));
