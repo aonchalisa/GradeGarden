@@ -2,7 +2,7 @@
 
 [เปิดเว็บ](https://grade-garden.vercel.app) · [GitHub](https://github.com/aonchalisa/GradeGarden)
 
-แพลนรายวิชา Computer Engineering 2022 คำนวณ GPA รายเทอมและ GPAX พร้อมบัญชีส่วนตัวและบันทึกข้ามอุปกรณ์
+คำนวณ GPA รายเทอมและ GPAX พร้อมบัญชีส่วนตัวและบันทึกข้ามอุปกรณ์
 
 ## ใช้งาน
 
