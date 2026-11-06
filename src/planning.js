@@ -1,4 +1,3 @@
-import { isSuCourse } from './grading.js';
 import { metrics, passed } from './model.js';
 
 export const COURSE_GROUPS = [
@@ -17,7 +16,7 @@ export function courseGroup(category) {
   return COURSE_GROUPS.find(g => g.categories.includes(category)) || COURSE_GROUPS.at(-1);
 }
 export function matchesCourse(course, { query = '', group = 'all' } = {}) {
-  return (group === 'all' || (group === 'su' ? isSuCourse(course) : courseGroup(course.category).id === group))
+  return (group === 'all' || courseGroup(course.category).id === group)
     && `${course.name} ${course.code || ''}`.toLowerCase().includes(query.toLowerCase().trim());
 }
 export function groupProgress(plan, group) {
@@ -31,7 +30,7 @@ export function groupProgress(plan, group) {
 export function honorsProjection(plan) {
   const completed = metrics(plan.courses);
   // Only pending numeric grades count as future GPA credits, never S/U/W.
-  const pending = plan.courses.filter(c => !isSuCourse(c) && (c.grade === '' || c.grade === 'I'));
+  const pending = plan.courses.filter(c => c.grade === '' || c.grade === 'I');
   const plannedRemaining = pending.reduce((sum, c) => sum + c.credits, 0);
   const remaining = plan.honors?.remainingCredits ?? plannedRemaining;
   const finalCredits = completed.gpaCredits + remaining;
