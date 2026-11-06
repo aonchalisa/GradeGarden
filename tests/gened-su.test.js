@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { SEED } from '../src/seed.js';
+import { readFileSync } from 'node:fs';
+const LEGACY=JSON.parse(readFileSync(new URL('./fixtures/legacy-plan.json',import.meta.url),'utf8'));
 import { updatePlan } from '../src/plan-updates.js';
 import { metrics, valid } from '../src/model.js';
 import { genEdProgress, honorsProjection, groupProgress, COURSE_GROUPS, matchesCourse } from '../src/planning.js';
@@ -28,7 +30,7 @@ test('four-course requirement is independent of credits and incomplete GenEd blo
   assert.equal(groupProgress(p,COURSE_GROUPS[0]).complete,true);
 });
 test('legacy metadata migration preserves explicit choices and numeric grades', () => {
-  const old=structuredClone(SEED);delete old.genEdMinCourses;
+  const old=structuredClone(LEGACY);delete old.genEdMinCourses;
   for(const c of old.courses){delete c.isGenEd;delete c.gradingMode;}
   const lab=old.courses.find(c=>c.name==='SE LAB');lab.grade='A';lab.credits=1;
   const p=updatePlan(old);assert.equal(genEdProgress(p).total,4);assert.equal(p.genEdMinCourses,4);
@@ -40,7 +42,7 @@ test('legacy metadata migration preserves explicit choices and numeric grades', 
 });
 
 test('changing an old SU course to a numeric grade uses the selected grade immediately',()=>{
- const p=structuredClone(SEED);const course=p.courses.find(c=>c.name==='Gened');
+ const p=structuredClone(SEED);const course=p.courses.find(c=>c.id==='c48');
  course.credits=3;course.grade='S';course.gradingMode='su';
  assert.equal(metrics(p.courses).gpaCredits,0);assert.equal(metrics(p.courses).earned,3);
  course.grade='B';assert.ok(valid(p));

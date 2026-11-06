@@ -12,6 +12,7 @@ export function valid(plan) {
   if (!plan.terms.every(t => t && text(t.id, 64) && text(t.name, 50) && Number.isInteger(t.year) && t.year >= 1 && t.year <= 12)) return false;
   if (!plan.courses.every(c => c && text(c.id, 64) && text(c.name, 120) && number(c.credits, 30) && GRADES.includes(c.grade) && (c.code === undefined || typeof c.code === 'string' && c.code.length <= 30) && (c.note === undefined || typeof c.note === 'string' && c.note.length <= 250) && plan.categories.some(x => x.id === c.category) && plan.terms.some(x => x.id === c.term))) return false;
   if (plan.genEdMinCourses !== undefined && (!Number.isInteger(plan.genEdMinCourses) || !number(plan.genEdMinCourses,100))) return false;
+  if (plan.courses.some(c => c.accentColor !== undefined && (typeof c.accentColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(c.accentColor)))) return false;
   if (plan.courses.some(c => c.hidden !== undefined && typeof c.hidden !== 'boolean')) return false;
   if (plan.courses.some(c => c.isGenEd !== undefined && typeof c.isGenEd !== 'boolean')) return false;
   if (plan.honors !== undefined && (!plan.honors || ![3.65, 3.25].includes(plan.honors.target) || !(plan.honors.remainingCredits === null || number(plan.honors.remainingCredits, 1000)))) return false;

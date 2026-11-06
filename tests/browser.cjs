@@ -37,7 +37,7 @@ async function login(page,email) {
   await page.goto('http://127.0.0.1:4175');await page.locator('[data-mode=signup]').click();await page.locator('[name=email]').fill('bob@example.com');await page.locator('[name=password]').fill('test-password');await page.locator('#auth-submit').click();await page.getByText('ตรวจอีเมลเพื่อยืนยันบัญชี', {exact:false}).waitFor();
   await page.locator('[data-mode=login]').click();await page.locator('[name=password]').fill('bad-password');await page.locator('#auth-submit').click();await page.getByText('อีเมลหรือรหัสผ่านไม่ถูกต้อง',{exact:true}).waitFor({timeout:10000});console.log('auth errors verified');
   await page.locator('#forgot-password').click();await page.locator('#auth-submit').click();await page.getByText('หากมีบัญชีนี้',{exact:false}).waitFor();await page.locator('#back-login').click();
-  await login(page,'alice@example.com');assert.equal(await page.locator('.course').count(),55);assert.equal(await page.locator('[data-grade=c0]').inputValue(),'');
+  await login(page,'alice@example.com');assert.equal(await page.locator('.course').count(),52);assert.equal(await page.locator('[data-grade=c0]').inputValue(),'');
   await page.locator('[data-grade=c0]').selectOption('A');await page.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');assert.equal(rows.get(accounts['alice@example.com']).data.courses[0].grade,'A');
   // A second device starts from the cloud, without sharing localStorage.
   const b=await browser.newContext();await mock(b);const device=await b.newPage();await login(device,'alice@example.com');assert.equal(await device.locator('[data-grade=c0]').inputValue(),'A');

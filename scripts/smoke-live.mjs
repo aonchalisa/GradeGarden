@@ -1,6 +1,8 @@
 // Optional live smoke test. Creates two throwaway accounts in the target project
 // and always deletes them. Requires an authenticated Supabase CLI.
 import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+const LEGACY=JSON.parse(readFileSync(new URL('../tests/fixtures/legacy-plan.json',import.meta.url),'utf8'));
 import { randomBytes } from 'node:crypto';
 import { createClient } from '@supabase/supabase-js';
 import { chromium } from '@playwright/test';
@@ -39,7 +41,7 @@ try {
     assert.ok(result.data.session, 'Username signup must return a session without SMTP');
     ids.push(result.data.user.id);
     if (username === accounts[0]) {
-      const legacy = structuredClone(SEED);
+      const legacy = structuredClone(LEGACY);
       legacy.terms.splice(6, 0, { id: 't6', name: 'ปี 3 / ฤดูร้อน', year: 3 });
       legacy.courses[0].note = 'existing user note'; legacy.courses[0].code = 'MY-COURSE';
       const practice = legacy.courses.find(c => c.name === 'ENG PRACTICE');
@@ -84,7 +86,7 @@ try {
   assert.equal(await a.locator('#gened-progress').getByText('1 / 4 วิชา',{exact:true}).count(),1);
   assert.equal(await a.locator('.su-course-section').count(),0);
   assert.equal(await a.locator('#category-filter option[value=su]').count(),0);
-  assert.equal(await a.locator('.course-list > .course').count(),SEED.courses.length);
+  assert.equal(await a.locator('.course-list > .course').count(),LEGACY.courses.length);
   await a.locator('[data-grade=c48]').selectOption('U');
   await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
   assert.equal(await a.locator('#stats .stat-value').first().textContent(),gpaxBeforeSu);
@@ -107,14 +109,14 @@ try {
   const summary = await a.locator('#stats').textContent();
   for (const group of COURSE_GROUPS) {
     await a.locator('#category-filter').selectOption(group.id);
-    assert.equal(await a.locator('.course').count(), SEED.courses.filter(c => matchesCourse(c, { group: group.id })).length);
+    assert.equal(await a.locator('.course').count(), LEGACY.courses.filter(c => matchesCourse(c, { group: group.id })).length);
     assert.equal(await a.locator('#stats').textContent(), summary, 'filter must not change GPAX');
   }
   await a.locator('#category-filter').selectOption('required');
   await a.locator('#search').fill('COMP');
   await a.locator('[data-year="4"]').click();
-  const fourth = new Set(SEED.terms.filter(t => t.year === 4).map(t => t.id));
-  assert.equal(await a.locator('.course').count(), SEED.courses.filter(c => fourth.has(c.term) && matchesCourse(c, { group: 'required', query: 'COMP' })).length);
+  const fourth = new Set(LEGACY.terms.filter(t => t.year === 4).map(t => t.id));
+  assert.equal(await a.locator('.course').count(), LEGACY.courses.filter(c => fourth.has(c.term) && matchesCourse(c, { group: 'required', query: 'COMP' })).length);
   await a.locator('#category-filter').selectOption('all'); await a.locator('#search').fill(''); await a.locator('[data-year="all"]').click();
   await a.locator('#honors-remaining').fill('12'); await a.locator('#honors-remaining').press('Tab');
   await a.locator('[data-honors-target="3.25"]').click();
@@ -152,10 +154,20 @@ try {
   assert.equal(await b.locator('#gened-progress').getByText('1 / 4 วิชา',{exact:true}).count(),1);
   assert.equal(await b.locator('[data-honors-target="3.25"]').getAttribute('aria-pressed'), 'true');
   await b.locator('#honors-auto').click(); await b.waitForFunction(() => document.querySelector('#save-status').dataset.kind === 'saved');
-  assert.equal(await b.locator('#honors-remaining').inputValue(), String(SEED.courses.filter(c=>['','I'].includes(c.grade)&&c.name!=='ENG PRACTICE'&&c.id!=='c0').reduce((n,c)=>n+c.credits,0)));
+  assert.equal(await b.locator('#honors-remaining').inputValue(), String(LEGACY.courses.filter(c=>['','I'].includes(c.grade)&&c.name!=='ENG PRACTICE'&&c.id!=='c0').reduce((n,c)=>n+c.credits,0)));
   await b.locator('#logout').click(); await b.locator('#account-screen').waitFor({ state: 'visible' });
   await login(b, accounts[1]);
   assert.equal(await b.locator('[data-grade=c0]').inputValue(), '');
+  assert.equal(await b.locator('.course').count(),52);
+  const newPlan=(await admin.from('study_plans').select('data').eq('user_id',ids[1]).single()).data.data;
+  assert.deepEqual(newPlan,SEED,'new accounts must receive the image-based curriculum, not the legacy Excel plan');
+  assert.equal(await b.locator('[data-term=t0] [data-course=c12]').count(),1);
+  assert.equal(await b.locator('[data-term=t1] [data-course=c0]').count(),1);
+  assert.equal(await b.locator('[data-term=t2] [data-course=c34]').count(),1);
+  assert.equal(await b.locator('[data-term=t3] [data-course=c41]').count(),1);
+  const accent=await b.locator('[data-course=c23]').evaluate(el=>el.style.getPropertyValue('--category'));
+  assert.equal(accent,SEED.courses.find(c=>c.id==='c23').accentColor);
+
   // Test row isolation over real PostgREST with a regular user's access token.
   const clientB = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } });
   await clientB.auth.signInWithPassword({ email: usernameEmail(accounts[1]), password: await authPassword(password) });
@@ -166,7 +178,7 @@ try {
   const guest = createClient(url, anon, { auth: { persistSession: false } });
   assert.ok((await guest.from('study_plans').select('*')).error);
   assert.deepEqual(errors, []);
-  console.log('PASS LIVE: hide/unhide affects GPA/credits/honors/GenEd, preserves every existing field, survives editing and second-device restore, leaves other accounts untouched, mobile layout and direct grade selection.');
+  console.log('PASS LIVE: new accounts get the 52-course/138-credit color-matched curriculum; existing 55-course account data stays intact; hide/unhide, grades, credits, notes and cross-device state preserved.');
 } finally {
   await browser?.close();
   for (const id of ids) {
