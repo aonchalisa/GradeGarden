@@ -4,6 +4,7 @@ project_id = "grade-garden"
 site_url = "https://grade-garden.vercel.app"
 additional_redirect_urls = ["https://grade-garden.vercel.app/", "http://127.0.0.1:4174/", "http://localhost:4174/"]
 enable_signup = true
+# API floor; app accepts 4+ and encodes 4/5-character inputs before authentication.
 minimum_password_length = 6
 
 [auth.email]

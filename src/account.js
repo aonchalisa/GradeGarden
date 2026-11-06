@@ -2,6 +2,7 @@ import { createClient } from '@supabase/supabase-js';
 import { updatePlan } from './plan-updates.js';
 import { SyncEngine } from './sync.js';
 import { usernameEmail } from './identity.js';
+import { authPassword } from './password.js';
 const usernameMode = import.meta.env.VITE_AUTH_MODE !== 'email';
 const $ = selector => document.querySelector(selector);
 
@@ -31,7 +32,7 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
     mode = next;
     const resetting = mode === 'reset', recovery = mode === 'recovery';
     $('#auth-title').textContent = ({ login: 'มาคำนวณเกรดกัน', signup: 'สมัครสมาชิก Grade Garden', reset: 'รีเซ็ตรหัสผ่าน', recovery: 'ตั้งรหัสผ่านใหม่' })[mode];
-    $('#auth-subtitle').textContent = ({ login: 'เข้าสู่ระบบเพื่อดูแผนการเรียนของคุณ', signup: usernameMode ? 'เลือกชื่อผู้ใช้ แล้วเก็บแผนไว้ได้ทุกเครื่อง' : 'สมัครด้วยอีเมล แล้วเก็บแผนไว้ได้ทุกเครื่อง', reset: 'เราจะส่งลิงก์รีเซ็ตรหัสผ่านไปทางอีเมล', recovery: 'เลือกรหัสผ่านใหม่อย่างน้อย 6 ตัวอักษร' })[mode];
+    $('#auth-subtitle').textContent = ({ login: 'เข้าสู่ระบบเพื่อดูแผนการเรียนของคุณ', signup: usernameMode ? 'เลือกชื่อผู้ใช้ แล้วเก็บแผนไว้ได้ทุกเครื่อง' : 'สมัครด้วยอีเมล แล้วเก็บแผนไว้ได้ทุกเครื่อง', reset: 'เราจะส่งลิงก์รีเซ็ตรหัสผ่านไปทางอีเมล', recovery: 'เลือกรหัสผ่านใหม่อย่างน้อย 4 ตัวอักษร' })[mode];
     $('#auth-submit').textContent = ({ login: 'เข้าสู่ระบบ', signup: 'สร้างบัญชี', reset: 'ส่งลิงก์รีเซ็ตรหัสผ่าน', recovery: 'บันทึกรหัสผ่านใหม่' })[mode];
     $('#auth-tabs').hidden = resetting || recovery;
     $('#forgot-password').hidden = usernameMode || resetting || recovery;
@@ -40,7 +41,7 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
     $('#email-label').hidden = recovery;
     $('#auth-form').elements.password.required = !resetting;
     $('#auth-form').elements.email.required = !recovery;
-    $('#auth-form').elements.password.minLength = mode === 'login' ? 1 : 6;
+    $('#auth-form').elements.password.minLength = mode === 'login' ? 1 : 4;
     $('#auth-form').elements.password.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
     $('#auth-form').elements.password.value = '';
     $('#auth-message').textContent = '';
@@ -149,8 +150,9 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
     const redirectTo = window.location.origin + '/';
     try {
       let result;
+      const encodedPassword = await authPassword(password);
       if (mode === 'signup') {
-        result = await client.auth.signUp({ email, password, options: { emailRedirectTo: redirectTo, data: usernameMode ? { username: identifier.toLowerCase() } : {} } });
+        result = await client.auth.signUp({ email, password: encodedPassword, options: { emailRedirectTo: redirectTo, data: usernameMode ? { username: identifier.toLowerCase() } : {} } });
         if (result.error) throw result.error;
         if (result.data.session) await activate(result.data.session);
         else $('#auth-message').textContent = 'ตรวจอีเมลเพื่อยืนยันบัญชี แล้วกลับมาเข้าสู่ระบบได้เลย (ดูในจดหมายขยะด้วยนะ)';
@@ -159,7 +161,7 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
         if (result.error) throw result.error;
         $('#auth-message').textContent = 'หากมีบัญชีนี้ ระบบจะส่งลิงก์ตั้งรหัสผ่านใหม่ให้ทางอีเมล';
       } else if (mode === 'recovery') {
-        result = await client.auth.updateUser({ password });
+        result = await client.auth.updateUser({ password: encodedPassword });
         if (result.error) throw result.error;
         setMode('login');
         const { data } = await client.auth.getSession();
@@ -167,7 +169,7 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
         await activate(data.session);
         toast('เปลี่ยนรหัสผ่านแล้ว ♡');
       } else {
-        result = await client.auth.signInWithPassword({ email, password });
+        result = await client.auth.signInWithPassword({ email, password: encodedPassword });
         if (result.error) throw result.error;
         await activate(result.data.session);
       }

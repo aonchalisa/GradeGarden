@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js';
 import { chromium } from '@playwright/test';
 import assert from 'node:assert/strict';
 import { usernameEmail } from '../src/identity.js';
+import { authPassword } from '../src/password.js';
 import { SEED } from '../src/seed.js';
 
 const project = process.env.SMOKE_PROJECT_REF;
@@ -18,7 +19,7 @@ const url = `https://${project}.supabase.co`;
 const admin = createClient(url, service, { auth: { persistSession: false, autoRefreshToken: false } });
 const ids = [], suffix = randomBytes(5).toString('hex');
 const accounts = [`smoke_a_${suffix}`, `smoke_b_${suffix}`];
-const password = randomBytes(3).toString('hex'); // Verify the six-character minimum end to end.
+const password = randomBytes(2).toString('hex'); // Verify the four-character minimum end to end.
 let browser;
 async function login(page, username) {
   await page.goto(origin);
@@ -32,7 +33,7 @@ try {
   // Exercise public registration, not an admin-created/auto-verified shortcut.
   for (const username of accounts) {
     const client = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } });
-    const result = await client.auth.signUp({ email: usernameEmail(username), password, options: { data: { username } } });
+    const result = await client.auth.signUp({ email: usernameEmail(username), password: await authPassword(password), options: { data: { username } } });
     if (result.error) throw new Error(`Public signup failed: ${result.error.code}`);
     assert.ok(result.data.session, 'Username signup must return a session without SMTP');
     ids.push(result.data.user.id);
@@ -73,7 +74,7 @@ try {
   assert.equal(await b.locator('[data-grade=c0]').inputValue(), '');
   // Test row isolation over real PostgREST with a regular user's access token.
   const clientB = createClient(url, anon, { auth: { persistSession: false, autoRefreshToken: false } });
-  await clientB.auth.signInWithPassword({ email: usernameEmail(accounts[1]), password });
+  await clientB.auth.signInWithPassword({ email: usernameEmail(accounts[1]), password: await authPassword(password) });
   const leak = await clientB.from('study_plans').select('*').eq('user_id', ids[0]);
   assert.ifError(leak.error); assert.deepEqual(leak.data, []);
   const attempt = await clientB.from('study_plans').update({ data: {} }).eq('user_id', ids[0]).select();
@@ -81,7 +82,7 @@ try {
   const guest = createClient(url, anon, { auth: { persistSession: false } });
   assert.ok((await guest.from('study_plans').select('*')).error);
   assert.deepEqual(errors, []);
-  console.log('PASS LIVE: six-character passwords, personalized greeting, eight semesters, summer merge, full credit labels, GPAX, mobile layout, cloud save and account isolation.');
+  console.log('PASS LIVE: four-character passwords, personalized greeting, eight semesters, summer merge, full credit labels, GPAX, mobile layout, cloud save and account isolation.');
 } finally {
   await browser?.close();
   for (const id of ids) {
