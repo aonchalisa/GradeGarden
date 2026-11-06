@@ -1,0 +1,13 @@
+project_id = "grade-garden"
+
+[auth]
+site_url = "https://grade-garden.vercel.app"
+additional_redirect_urls = ["https://grade-garden.vercel.app/", "http://127.0.0.1:4174/", "http://localhost:4174/"]
+enable_signup = true
+minimum_password_length = 8
+
+[auth.email]
+enabled = true
+# Usernames are synthetic reserved addresses, not claimed email identities.
+# Set true only when switching VITE_AUTH_MODE to email with custom SMTP.
+enable_confirmations = false

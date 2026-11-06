@@ -55,3 +55,10 @@ test('disposing a loading engine prevents old-account data from reaching UI', as
 test('unavailable browser storage still allows cloud saving', async () => {
   const db = server(), { engine } = make(db.client('alice'), { storage: { getItem() { throw Error(); }, setItem() { throw Error(); }, removeItem() { throw Error(); } } }); await engine.open(); assert.ok(db.rows.has('alice')); engine.dispose();
 });
+test('username sign-in uses a reserved address and rejects malformed names', async () => {
+  const { usernameEmail } = await import('../src/identity.js');
+  assert.equal(usernameEmail(' Aon_Garden '), 'aon_garden@users.gradegarden.invalid');
+  for (const name of ['', 'ab', 'a@b.com', '<script>', 'ไทยไทย', 'a'.repeat(25)]) assert.throws(() => usernameEmail(name));
+  assert.equal(valid({ ...fresh(), courses: [null] }), false);
+  const duplicate = fresh(); duplicate.courses.push(duplicate.courses[0]); assert.equal(valid(duplicate), false);
+});

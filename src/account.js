@@ -1,14 +1,16 @@
 import { createClient } from '@supabase/supabase-js';
 import { SyncEngine } from './sync.js';
+import { usernameEmail } from './identity.js';
+const usernameMode = import.meta.env.VITE_AUTH_MODE !== 'email';
 const $ = selector => document.querySelector(selector);
 
 function friendly(error) {
   const code = error?.code;
-  if (code === 'invalid_credentials') return 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
+  if (code === 'invalid_credentials') return usernameMode ? 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง' : 'อีเมลหรือรหัสผ่านไม่ถูกต้อง';
   if (code === 'email_not_confirmed') return 'กรุณายืนยันอีเมลก่อนเข้าสู่ระบบ';
   if (code === 'weak_password') return 'รหัสผ่านยังไม่ผ่านเกณฑ์ กรุณาใช้รหัสผ่านที่ยาวและเดายากขึ้น';
   if (code === 'over_email_send_rate_limit' || error?.status === 429) return 'ส่งคำขอถี่เกินไป กรุณารอสักครู่แล้วลองใหม่';
-  if (code === 'user_already_exists') return 'อีเมลนี้สมัครแล้ว ลองเข้าสู่ระบบหรือรีเซ็ตรหัสผ่าน';
+  if (code === 'user_already_exists') return usernameMode ? 'ชื่อผู้ใช้นี้มีคนใช้แล้ว ลองเลือกชื่ออื่นหรือเข้าสู่ระบบ' : 'อีเมลนี้สมัครแล้ว ลองเข้าสู่ระบบหรือรีเซ็ตรหัสผ่าน';
   return 'ทำรายการไม่สำเร็จ กรุณาตรวจการเชื่อมต่อแล้วลองใหม่';
 }
 
@@ -28,10 +30,10 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
     mode = next;
     const resetting = mode === 'reset', recovery = mode === 'recovery';
     $('#auth-title').textContent = ({ login: 'กลับมาปลูกฝันกัน ♡', signup: 'เริ่มสวนเกรดของตัวเอง ♡', reset: 'มารับรหัสผ่านใหม่กัน', recovery: 'ตั้งรหัสผ่านใหม่ ♡' })[mode];
-    $('#auth-subtitle').textContent = ({ login: 'เข้าสู่ระบบเพื่อดูแผนการเรียนของคุณ', signup: 'สมัครด้วยอีเมล แล้วเก็บแผนไว้ได้ทุกเครื่อง', reset: 'เราจะส่งลิงก์รีเซ็ตรหัสผ่านไปทางอีเมล', recovery: 'เลือกรหัสผ่านใหม่อย่างน้อย 8 ตัวอักษร' })[mode];
+    $('#auth-subtitle').textContent = ({ login: 'เข้าสู่ระบบเพื่อดูแผนการเรียนของคุณ', signup: usernameMode ? 'เลือกชื่อผู้ใช้ แล้วเก็บแผนไว้ได้ทุกเครื่อง' : 'สมัครด้วยอีเมล แล้วเก็บแผนไว้ได้ทุกเครื่อง', reset: 'เราจะส่งลิงก์รีเซ็ตรหัสผ่านไปทางอีเมล', recovery: 'เลือกรหัสผ่านใหม่อย่างน้อย 8 ตัวอักษร' })[mode];
     $('#auth-submit').textContent = ({ login: 'เข้าสู่ระบบ', signup: 'สร้างบัญชี', reset: 'ส่งลิงก์รีเซ็ตรหัสผ่าน', recovery: 'บันทึกรหัสผ่านใหม่' })[mode];
     $('#auth-tabs').hidden = resetting || recovery;
-    $('#forgot-password').hidden = resetting || recovery;
+    $('#forgot-password').hidden = usernameMode || resetting || recovery;
     $('#back-login').hidden = !resetting;
     $('#password-label').hidden = resetting;
     $('#email-label').hidden = recovery;
@@ -69,7 +71,7 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
     if (user?.id === session.user.id && (engine || loading)) return;
     const generation = ++epoch;
     engine?.dispose(); engine = null; user = session.user; loading = true;
-    $('#account-email').textContent = user.email || '';
+    $('#account-email').textContent = usernameMode ? (user.user_metadata?.username || user.email?.split('@')[0] || '') : user.email || '';
     $('#loading-message').textContent = 'กำลังเปิดแผนของคุณ…';
     $('#load-retry').hidden = true;
     screen('loading');
@@ -135,12 +137,15 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
     busy = true;
     $('#auth-submit').disabled = true;
     $('#auth-message').textContent = 'กำลังดำเนินการ…';
-    const email = e.target.elements.email.value.trim(), password = e.target.elements.password.value;
+    const identifier = e.target.elements.email.value.trim(), password = e.target.elements.password.value;
+    let email;
+    try { email = mode === 'recovery' ? '' : usernameMode ? usernameEmail(identifier) : identifier; }
+    catch { $('#auth-message').textContent = 'ใช้ชื่อ 3–24 ตัว เป็น a–z ตัวเลข หรือ _ เท่านั้น'; busy = false; $('#auth-submit').disabled = false; return; }
     const redirectTo = window.location.origin + '/';
     try {
       let result;
       if (mode === 'signup') {
-        result = await client.auth.signUp({ email, password, options: { emailRedirectTo: redirectTo } });
+        result = await client.auth.signUp({ email, password, options: { emailRedirectTo: redirectTo, data: usernameMode ? { username: identifier.toLowerCase() } : {} } });
         if (result.error) throw result.error;
         if (result.data.session) await activate(result.data.session);
         else $('#auth-message').textContent = 'ตรวจอีเมลเพื่อยืนยันบัญชี แล้วกลับมาเข้าสู่ระบบได้เลย (ดูในจดหมายขยะด้วยนะ)';
@@ -168,6 +173,14 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
   window.addEventListener('online', () => engine?.flush());
   window.addEventListener('beforeunload', e => { if (engine?.pending) { e.preventDefault(); e.returnValue = ''; } });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') engine?.flush(); });
+  if (usernameMode) {
+    const input = $('#auth-form').elements.email;
+    $('#email-label').firstChild.textContent = 'ชื่อผู้ใช้';
+    input.type = 'text'; input.autocomplete = 'username'; input.placeholder = 'เช่น aon_garden';
+    input.pattern = '[A-Za-z0-9_]{3,24}'; input.minLength = 3; input.maxLength = 24;
+    input.title = 'ชื่อ 3–24 ตัว ใช้ a–z ตัวเลข และ _ ได้';
+    $('.auth-footnote').innerHTML = 'ชื่อผู้ใช้ใช้ a–z ตัวเลข และ _ (3–24 ตัว)<br>เก็บชื่อและรหัสผ่านไว้สำหรับเปิดบนเครื่องอื่น';
+  }
   setMode('login');
   if (!configured) {
     $('#config-message').hidden = false;

@@ -1,58 +1,55 @@
 # Grade Garden 🌷
 
+[เปิดเว็บ](https://grade-garden.vercel.app) · [GitHub](https://github.com/aonchalisa/GradeGarden)
+
 แพลนรายวิชา Computer Engineering 2022 คำนวณ GPA รายเทอมและสะสม พร้อมบัญชีส่วนตัวและบันทึกข้ามอุปกรณ์
 
-## ทำอะไรได้บ้าง
+## ใช้งาน
 
-- สมัครสมาชิก/เข้าสู่ระบบด้วยอีเมลและรหัสผ่าน ยืนยันอีเมล และรีเซ็ตรหัสผ่าน
-- แต่ละบัญชีมีแผนของตัวเอง บันทึกใน Supabase PostgreSQL
-- ลากย้ายวิชาหรือเปลี่ยนเทอมจากหน้าต่างแก้ไขบนมือถือ
-- เลือกหมวด แก้หน่วยกิตและเกรด เพิ่มวิชาและเทอม
-- ตรวจขั้นต่ำแยกแต่ละหมวดและยอดรวม ลงเกินได้
-- เซฟอัตโนมัติ พร้อมฉบับร่างในเครื่องเมื่อเน็ตขาด
-- ถ้าแก้จากหลายเครื่องพร้อมกัน จะหยุดการเซฟที่ขัดแย้งเพื่อไม่ให้ทับกันโดยไม่รู้ตัว
-- สำรองและนำเข้าแผนเป็น JSON
+1. สมัครด้วยชื่อผู้ใช้ 3–24 ตัว (a–z, ตัวเลข, _) และรหัสผ่านอย่างน้อย 8 ตัว
+2. แต่ละบัญชีมีแผนของตัวเอง บันทึกออนไลน์อัตโนมัติ เปิดต่อจากอุปกรณ์อื่นด้วยบัญชีเดิมได้
+3. เลือกเกรดบนการ์ด หรือกดชื่อวิชาเพื่อแก้ชื่อ รหัส หน่วยกิต หมวด และเทอม
+4. ลากการ์ดเพื่อย้ายวิชา/ลำดับในเทอมได้ บนมือถือย้ายด้วยช่องเลือกเทอม
+5. เพิ่มวิชาและเทอม ปรับขั้นต่ำรายหมวดและยอดรวม และลงเกินขั้นต่ำได้
+6. สำรอง/นำเข้าแผนเป็น JSON ได้
 
 สมาชิกใหม่เริ่มด้วยรายการวิชาที่ยังไม่มีเกรด ไม่มีข้อมูลเกรดส่วนตัวใน repository นี้
 
-## ตั้ง Supabase (ทำครั้งเดียว)
+เมื่อเน็ตหลุด ฉบับร่างจะเก็บในเครื่องและแสดงว่ายังไม่บันทึกออนไลน์ เมื่อกลับมาออนไลน์จะลองบันทึกใหม่ ถ้าแก้พร้อมกันจากหลายเครื่องจะหยุดการบันทึกที่ขัดแย้ง ให้สำรองฉบับร่างแล้วโหลดแผนล่าสุดก่อนแก้ต่อ
 
-1. สร้างโปรเจกต์ที่ [Supabase Dashboard](https://supabase.com/dashboard)
-2. เปิด SQL Editor แล้วรันไฟล์ [migration](supabase/migrations/202611060001_study_plans.sql) ทั้งไฟล์ครั้งเดียว สร้างตาราง, RLS และฟังก์ชันบันทึก
-3. เปิด Authentication > Providers > Email ให้สมัครด้วย email/password ได้ และเปิด Confirm email (ลิงก์ยืนยันและรีเซ็ตแบบ PKCE ให้เปิดด้วยเบราว์เซอร์เดียวกับที่ขอส่งลิงก์)
-4. เปิด Authentication > URL Configuration กำหนด Site URL เป็นโดเมน Vercel ที่ใช้งานจริง และเพิ่ม Redirect URL เป็น `https://YOUR-APP.vercel.app/` รวมถึง `http://127.0.0.1:4174/` สำหรับพัฒนา
-5. สำหรับเปิดรับผู้ใช้ทั่วไป ให้ตั้ง **Custom SMTP** ใน Supabase ด้วยบริการส่งอีเมลของคุณ ค่าเริ่มต้นส่งอีเมลได้เฉพาะที่อยู่ในทีมและมีข้อจำกัด จึงยังใช้เปิดสมัครทั่วไปไม่ได้ รายละเอียด: [Supabase SMTP](https://supabase.com/docs/guides/auth/auth-smtp)
-6. คัดลอก Project URL และ Publishable key จาก Connect/API keys (anon public key แบบเดิมใช้ได้)
+ระบบเริ่มต้นใช้ **ชื่อผู้ใช้และรหัสผ่าน** ไม่ขออีเมลจริง จึงไม่ต้องรออีเมลยืนยัน และ **ยังไม่มีการรีเซ็ตรหัสผ่านทางอีเมล** ควรเก็บรหัสผ่านใน password manager
 
-ไม่ใช้ service_role key หรือ database password ในเว็บ และไม่ต้องให้ข้อมูลสองอย่างนี้กับแอป
+## สถาปัตยกรรม
 
-## Deploy บน Vercel
+- Vite + JavaScript; Vercel เชื่อม GitHub main เพื่อ deploy อัตโนมัติ
+- Supabase Auth จัดการ password hashing/session/refresh token
+- Username แปลงเป็นที่อยู่ภายในโดเมนสงวน `.invalid` ไม่ใช่อีเมลจริงหรือการรับรองตัวตนผ่านอีเมล
+- PostgreSQL `study_plans` เก็บแผนหนึ่งรายการต่อ user ID
+- Row Level Security (RLS) ตรวจ UUID จาก session ทั้งอ่านและเขียน
+- ฟังก์ชัน `save_study_plan` ใช้ revision เพื่อป้องกันการทับกันจากแท็บเก่า
+- ใช้ publishable key ในเบราว์เซอร์ ไม่ใช้ service_role key ในแอป
 
-1. ส่งโค้ดขึ้น GitHub repository ของคุณ
-2. เปิด [Vercel New Project](https://vercel.com/new) แล้ว Import repository `aonchalisa/GradeGarden`
-3. Framework: **Vite**; Build command: `npm run build`; Output: `dist`; Node.js: **22 หรือใหม่กว่า**
-4. เพิ่ม Environment Variables ใน Production/Preview ตามที่ต้องใช้:
-   - `VITE_SUPABASE_URL` = Project URL
-   - `VITE_SUPABASE_PUBLISHABLE_KEY` = Publishable key (หรือ anon public key)
-5. Deploy แล้วนำ URL จริงไปตั้งค่าใน Supabase ตามด้านบน
-6. ถ้าเปลี่ยน Environment Variables หลัง deploy ให้ Redeploy เพื่อสร้าง frontend ใหม่
+## โปรเจกต์ที่ตั้งไว้
 
-สองตัวแปรนี้เป็น public browser config ตามสถาปัตยกรรม Supabase ความเป็นส่วนตัวของข้อมูลบังคับผ่าน RLS ไม่ใช่การซ่อน publishable key
-
-[เอกสาร Vercel GitHub](https://vercel.com/docs/git/vercel-for-github) · [Environment variables](https://vercel.com/docs/environment-variables) · [Supabase RLS](https://supabase.com/docs/guides/database/postgres/row-level-security)
-
-หากยังไม่ตั้งตัวแปร เว็บจะแสดงว่าระบบบัญชียังไม่พร้อม และไม่ให้สมัครปลอม/แสดงสถานะว่าเซฟสำเร็จ
+- Production: `https://grade-garden.vercel.app`
+- Supabase project: `hsfpexposfxoeojrxhur` ([Dashboard](https://supabase.com/dashboard/project/hsfpexposfxoeojrxhur))
+- Organization: Grade Garden, region Singapore
+- [Migration](supabase/migrations/202611060001_study_plans.sql) ถูกใช้กับโปรเจกต์นี้แล้ว ไม่ต้องรันซ้ำ
+- [Auth config](supabase/config.toml) กำหนดชื่อผู้ใช้ ไม่ส่งอีเมลยืนยัน
+- Public config ตั้งไว้บน Vercel Production และ Preview; ค่าใน `.env.local` สำหรับพัฒนาไม่ถูกส่งขึ้น Git
 
 ## ย้ายแผนเดิมของเจ้าของเว็บ
 
-ในเว็บเก่าที่ `localhost:4173` กดสำรองข้อมูลเป็น JSON จากนั้นล็อกอินด้วยบัญชีของคุณในเว็บใหม่ แล้วกดนำเข้าข้อมูล แผนจะถูกบันทึกในบัญชีนั้นเท่านั้น ไม่รวมไฟล์สำรองส่วนตัวใน Git
+ในเว็บเก่าที่ `localhost:4173` กดสำรองข้อมูลเป็น JSON จากนั้นสมัครบัญชีในเว็บใหม่ ล็อกอิน แล้วกดนำเข้าข้อมูล แผนจะถูกเก็บในบัญชีนั้นเท่านั้น ไม่รวมไฟล์สำรองส่วนตัวใน Git
 
 ## พัฒนาในเครื่อง
+
+ต้องใช้ Node.js 22 หรือใหม่กว่า
 
 ```sh
 npm ci
 cp .env.example .env.local
-# ใส่ public config ใน .env.local
+# ใส่ Project URL และ Publishable key ของ Supabase ใน .env.local
 npm run dev
 ```
 
@@ -65,21 +62,45 @@ npm run build
 
 `npm test` ทดสอบ GPA, การบันทึก/กู้ draft, ความขัดแย้งข้ามอุปกรณ์ และ SQL จริงบน PostgreSQL ผ่าน PGlite รวมถึง RLS ของผู้ใช้สองคนและการปฏิเสธ anonymous
 
-### Browser tests
+## ทดสอบเว็บ
+
+Browser tests สำหรับโหมดอีเมลที่รองรับไว้ (ใช้ backend จำลอง):
 
 ```sh
-# Terminal 1: config นี้เป็นค่าทดสอบ ไม่มีการต่อ Supabase จริง
-VITE_SUPABASE_URL=https://gradegarden-test.supabase.co VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_test_only npm run dev -- --port 4175
-# Terminal 2: ใช้ Chrome ที่ติดตั้งในเครื่อง
+# Terminal 1: ค่าทดสอบเท่านั้น ไม่ได้ต่อ Supabase จริง
+VITE_AUTH_MODE=email VITE_SUPABASE_URL=https://gradegarden-test.supabase.co VITE_SUPABASE_PUBLISHABLE_KEY=sb_publishable_test_only npm run dev -- --port 4175
+# Terminal 2
 npm run test:browser
 ```
 
-Browser tests ใช้ Supabase endpoints จำลอง ครอบคลุมสมัครสมาชิก/ยืนยันอีเมล, เข้าสู่ระบบ, ลืมรหัสผ่าน, เซฟ, เปิดเครื่องใหม่, conflict/reload, ลากย้าย, ออกจากระบบ และแยกบัญชีบน UI ทดสอบ PKCE recovery callback และการตั้งรหัสผ่านใหม่ด้วย endpoint จำลองแล้ว ยังต้องทดสอบการส่งอีเมลยืนยันและรีเซ็ตรหัสผ่านกับ Supabase/SMTP จริงหลังเชื่อมโปรเจกต์
+Live smoke test สำหรับโหมดชื่อผู้ใช้: สร้างบัญชีทดสอบชั่วคราวสองคน ตรวจการบันทึกจริง เปิดข้าม browser context สิทธิ์แยกบัญชีผ่าน PostgREST และลบบัญชีทดสอบเมื่อจบ ต้องล็อกอิน Supabase CLI บนเครื่องก่อน สคริปต์อ่าน admin key เฉพาะในหน่วยความจำเพื่อ cleanup ไม่ส่งให้ frontend หรือบันทึกลง Git
 
-## กติกาคำนวณและข้อมูลตั้งต้น
+```sh
+SMOKE_PROJECT_REF=hsfpexposfxoeojrxhur SMOKE_ORIGIN=https://grade-garden.vercel.app node scripts/smoke-live.mjs
+```
+
+## ตั้งเว็บใหม่บน Vercel/Supabase
+
+1. สร้าง Supabase project แล้วรันไฟล์ migration ทั้งไฟล์ครั้งเดียว
+2. ตั้ง Auth ตาม `supabase/config.toml` สำหรับ username mode
+3. Import GitHub repository บน Vercel; Framework **Vite**, Build `npm run build`, Output `dist`, Node **22+**
+4. ตั้ง Environment Variables:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_PUBLISHABLE_KEY` (หรือ anon public key)
+   - `VITE_AUTH_MODE=username`
+5. ตั้ง Supabase Site URL/Redirect URLs เป็นโดเมนจริง
+6. หากแก้ตัวแปรบน Vercel ให้ redeploy เพื่อสร้าง frontend ใหม่
+
+ถ้ายังไม่ตั้ง public config เว็บจะปิดการสมัครและแสดงว่าระบบบัญชียังไม่พร้อม
+
+## ถ้าต้องการเปลี่ยนเป็นอีเมลในอนาคต
+
+ตัวแอปรองรับ `VITE_AUTH_MODE=email` พร้อมสมัคร/ยืนยันอีเมล, ลืมรหัสผ่าน, PKCE recovery และตั้งรหัสผ่านใหม่ ต้องตั้ง Custom SMTP ใน Supabase, เปิด `auth.email.enable_confirmations=true` และ redeploy ก่อนเปิดโหมดนี้ ระบบชื่อผู้ใช้เดิมกับอีเมลเป็นคนละตัวระบุ ไม่ได้ย้ายบัญชีให้เอง
+
+PKCE email links ให้เปิดในเบราว์เซอร์เดียวกับที่ขอส่งลิงก์ การส่งอีเมลเริ่มต้นของ Supabase จำกัดเฉพาะที่อยู่ในทีม ไม่เพียงพอสำหรับเปิดสมัครทั่วไป: [Supabase SMTP](https://supabase.com/docs/guides/auth/auth-smtp)
+
+## กติกาคำนวณ
 
 GPA = ผลรวมแต้มเกรด × หน่วยกิต / หน่วยกิตที่มีเกรด A ถึง F โดย A=4, B+=3.5, B=3, C+=2.5, C=2, D+=1.5, D=1, F=0; S/U/W/I/ยังไม่ระบุเกรดไม่รวม GPA หน่วยกิตผ่านนับ A–D และ S
 
-รายวิชาซ้ำคิดแยกตามรายการ ไม่แทนเกรดเดิมโดยอัตโนมัติ ต้องตรวจนโยบายคณะก่อนใช้เป็นผลการเรียนทางการ
-
-ขั้นต่ำรายหมวดตั้งจากภาพที่แนบ รวม 137 แต่หัวภาพระบุ 138 จึงเปิดให้แก้เกณฑ์และตรวจสองส่วนแยกกัน การจัดหมวดเป็นค่าเริ่มต้นที่ผู้ใช้ต้องตรวจ รวมถึงรายการที่ยังไม่ทราบหน่วยกิตซึ่งทำเครื่องหมายไว้
+รายวิชาซ้ำคิดแยกตามรายการ ไม่แทนเกรดเดิมโดยอัตโนมัติ ต้องตรวจนโยบายคณะก่อนใช้เป็นผลการเรียนทางการ ขั้นต่ำรายหมวดจากภาพรวม 137 แต่หัวภาพระบุ 138 จึงเปิดให้แก้เกณฑ์และตรวจสองส่วนแยกกัน การจัดหมวดและรายการที่ยังไม่ทราบหน่วยกิตต้องตรวจอีกครั้ง
