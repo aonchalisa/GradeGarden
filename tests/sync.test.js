@@ -62,3 +62,33 @@ test('username sign-in uses a reserved address and rejects malformed names', asy
   assert.equal(valid({ ...fresh(), courses: [null] }), false);
   const duplicate = fresh(); duplicate.courses.push(duplicate.courses[0]); assert.equal(valid(duplicate), false);
 });
+test('summer merge preserves grades, course order and credits; migration is idempotent', async () => {
+  const { updatePlan } = await import('../src/plan-updates.js');
+  const old = fresh(); old.terms.splice(6, 0, { id: 't6', name: 'ปี 3 / ฤดูร้อน', year: 3 });
+  const practice = old.courses.find(c => c.name === 'ENG PRACTICE');
+  practice.term = 't6'; practice.grade = 'A'; practice.credits = 2; practice.note = 'keep my note';
+  const migrated = updatePlan(old);
+  assert.equal(migrated.terms.length, old.terms.length - 1);
+  assert.ok(migrated.terms.every(t => t.id !== 't6'));
+  assert.deepEqual(migrated.courses.find(c => c.id === practice.id), { ...practice, term: 't7' });
+  assert.deepEqual(metrics(migrated.courses), metrics(old.courses));
+  assert.deepEqual(updatePlan(migrated), migrated);
+  assert.equal(practice.term, 't6', 'input must remain unchanged');
+  const db = server(); db.rows.set('alice', { data: old, revision: 3 });
+  const { engine, plans } = make(db.client('alice'), { transform: updatePlan });
+  await engine.open();
+  assert.deepEqual(plans.at(-1), migrated);
+  assert.equal(db.rows.get('alice').revision, 4);
+  assert.deepEqual(db.rows.get('alice').data, migrated);
+  engine.dispose();
+});
+test('summer merge creates a missing year-four first term without losing courses', async () => {
+  const { updatePlan } = await import('../src/plan-updates.js');
+  const old = fresh(); old.terms = old.terms.filter(t => t.id !== 't7');
+  old.terms.push({ id: 't6', name: 'ปี 3 / ฤดูร้อน', year: 3 });
+  old.courses.forEach(c => { if (c.term === 't7') c.term = 't6'; });
+  const migrated = updatePlan(old);
+  assert.ok(valid(migrated));
+  assert.equal(migrated.courses.length, old.courses.length);
+  assert.ok(migrated.terms.some(t => t.name === 'ปี 4 / เทอม 1'));
+});

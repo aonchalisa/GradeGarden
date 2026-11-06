@@ -31,11 +31,6 @@ export const SEED = {
       "year": 3
     },
     {
-      "id": "t6",
-      "name": "ปี 3 / ฤดูร้อน",
-      "year": 3
-    },
-    {
       "id": "t7",
       "name": "ปี 4 / เทอม 1",
       "year": 4
@@ -527,7 +522,7 @@ export const SEED = {
       "credits": 0.0,
       "grade": "",
       "category": "core",
-      "term": "t6",
+      "term": "t7",
       "verify": true,
       "note": "กรุณาตรวจหน่วยกิตตามรายวิชาที่ลงจริง"
     },

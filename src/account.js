@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { updatePlan } from './plan-updates.js';
 import { SyncEngine } from './sync.js';
 import { usernameEmail } from './identity.js';
 const usernameMode = import.meta.env.VITE_AUTH_MODE !== 'email';
@@ -29,8 +30,8 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
   function setMode(next) {
     mode = next;
     const resetting = mode === 'reset', recovery = mode === 'recovery';
-    $('#auth-title').textContent = ({ login: 'กลับมาปลูกฝันกัน ♡', signup: 'เริ่มสวนเกรดของตัวเอง ♡', reset: 'มารับรหัสผ่านใหม่กัน', recovery: 'ตั้งรหัสผ่านใหม่ ♡' })[mode];
-    $('#auth-subtitle').textContent = ({ login: 'เข้าสู่ระบบเพื่อดูแผนการเรียนของคุณ', signup: usernameMode ? 'เลือกชื่อผู้ใช้ แล้วเก็บแผนไว้ได้ทุกเครื่อง' : 'สมัครด้วยอีเมล แล้วเก็บแผนไว้ได้ทุกเครื่อง', reset: 'เราจะส่งลิงก์รีเซ็ตรหัสผ่านไปทางอีเมล', recovery: 'เลือกรหัสผ่านใหม่อย่างน้อย 8 ตัวอักษร' })[mode];
+    $('#auth-title').textContent = ({ login: 'มาคำนวณเกรดกัน', signup: 'สมัครสมาชิก Grade Garden', reset: 'รีเซ็ตรหัสผ่าน', recovery: 'ตั้งรหัสผ่านใหม่' })[mode];
+    $('#auth-subtitle').textContent = ({ login: 'เข้าสู่ระบบเพื่อดูแผนการเรียนของคุณ', signup: usernameMode ? 'เลือกชื่อผู้ใช้ แล้วเก็บแผนไว้ได้ทุกเครื่อง' : 'สมัครด้วยอีเมล แล้วเก็บแผนไว้ได้ทุกเครื่อง', reset: 'เราจะส่งลิงก์รีเซ็ตรหัสผ่านไปทางอีเมล', recovery: 'เลือกรหัสผ่านใหม่อย่างน้อย 6 ตัวอักษร' })[mode];
     $('#auth-submit').textContent = ({ login: 'เข้าสู่ระบบ', signup: 'สร้างบัญชี', reset: 'ส่งลิงก์รีเซ็ตรหัสผ่าน', recovery: 'บันทึกรหัสผ่านใหม่' })[mode];
     $('#auth-tabs').hidden = resetting || recovery;
     $('#forgot-password').hidden = usernameMode || resetting || recovery;
@@ -39,6 +40,7 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
     $('#email-label').hidden = recovery;
     $('#auth-form').elements.password.required = !resetting;
     $('#auth-form').elements.email.required = !recovery;
+    $('#auth-form').elements.password.minLength = mode === 'login' ? 1 : 6;
     $('#auth-form').elements.password.autocomplete = mode === 'login' ? 'current-password' : 'new-password';
     $('#auth-form').elements.password.value = '';
     $('#auth-message').textContent = '';
@@ -61,6 +63,7 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
     engine?.dispose(); engine = null; user = null; loading = false;
     document.querySelectorAll('dialog[open]').forEach(d => d.close());
     $('#app-main').inert = false;
+    $('#planner-greeting').textContent = 'คำนวณเกรดและวางแผนการเรียน';
     onPlan(fresh());
     screen('account');
     if (mode !== 'reset') setMode('login');
@@ -72,6 +75,8 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
     const generation = ++epoch;
     engine?.dispose(); engine = null; user = session.user; loading = true;
     $('#account-email').textContent = usernameMode ? (user.user_metadata?.username || user.email?.split('@')[0] || '') : user.email || '';
+    const displayName = user.user_metadata?.username || user.email?.split('@')[0] || '';
+    $('#planner-greeting').textContent = displayName ? `สวัสดี ${displayName} มาคำนวณเกรดกัน` : 'คำนวณเกรดและวางแผนการเรียน';
     $('#loading-message').textContent = 'กำลังเปิดแผนของคุณ…';
     $('#load-retry').hidden = true;
     screen('loading');
@@ -90,7 +95,7 @@ export function setupAccount({ fresh, valid, onPlan, exportPlan, toast }) {
     };
     const next = new SyncEngine({ api, userId: user.id, fresh, valid, storage: {
       getItem: k => localStorage.getItem(k), setItem: (k, v) => localStorage.setItem(k, v), removeItem: k => localStorage.removeItem(k),
-    }, onPlan, onStatus: status });
+    }, onPlan, onStatus: status, transform: updatePlan });
     engine = next;
     try {
       await next.open();

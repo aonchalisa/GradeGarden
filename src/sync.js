@@ -1,7 +1,7 @@
 // One revision per account: stale tabs cannot silently overwrite a newer plan.
 export class SyncEngine {
-  constructor({ api, userId, fresh, valid, storage, onPlan, onStatus, delay = 600 }) {
-    Object.assign(this, { api, userId, fresh, valid, storage, onPlan, onStatus, delay });
+  constructor({ api, userId, fresh, valid, storage, onPlan, onStatus, transform = plan => structuredClone(plan), delay = 600 }) {
+    Object.assign(this, { api, userId, fresh, valid, storage, onPlan, onStatus, transform, delay });
     this.key = `grade-garden:draft:${userId}`;
     this.revision = null;
     this.pending = null;
@@ -30,8 +30,8 @@ export class SyncEngine {
     this.revision = row?.revision ?? null;
     const draft = this.readDraft();
     if (draft) {
-      this.pending = draft.plan;
-      this.onPlan(draft.plan);
+      this.pending = this.transform(draft.plan);
+      this.onPlan(this.pending);
       if (draft.revision !== this.revision) {
         this.conflict = true;
         this.status('conflict');
@@ -39,8 +39,13 @@ export class SyncEngine {
       }
       await this.flush();
     } else if (row) {
-      this.onPlan(row.data);
-      this.status('saved');
+      const plan = this.transform(row.data);
+      this.onPlan(plan);
+      if (JSON.stringify(plan) !== JSON.stringify(row.data)) {
+        this.pending = plan;
+        this.persist();
+        await this.flush();
+      } else this.status('saved');
     } else {
       const plan = this.fresh();
       this.onPlan(plan);
@@ -51,7 +56,7 @@ export class SyncEngine {
   }
   change(plan) {
     if (this.disposed || this.conflict) return;
-    this.pending = structuredClone(plan);
+    this.pending = this.transform(plan);
     this.sequence++;
     this.persist();
     this.status('pending');
@@ -96,8 +101,13 @@ export class SyncEngine {
     this.pending = null;
     this.conflict = false;
     this.persist();
-    this.onPlan(row.data);
-    this.status('saved');
+    const plan = this.transform(row.data);
+    this.onPlan(plan);
+    if (JSON.stringify(plan) !== JSON.stringify(row.data)) {
+      this.pending = plan;
+      this.persist();
+      await this.flush();
+    } else this.status('saved');
   }
   dispose() { this.disposed = true; clearTimeout(this.timer); }
 }
