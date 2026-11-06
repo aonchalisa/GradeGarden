@@ -1,4 +1,4 @@
-import { metrics, passed } from './model.js';
+import { metrics, passed, isCounted } from './model.js';
 
 export const COURSE_GROUPS = [
   { id: 'required', name: 'บังคับเรียน', categories: ['gen', 'science', 'foundation', 'core'], color: '#b8789b' },
@@ -30,7 +30,7 @@ export function groupProgress(plan, group) {
 export function honorsProjection(plan) {
   const completed = metrics(plan.courses);
   // Only pending numeric grades count as future GPA credits, never S/U/W.
-  const pending = plan.courses.filter(c => c.grade === '' || c.grade === 'I');
+  const pending = plan.courses.filter(c => isCounted(c) && (c.grade === '' || c.grade === 'I'));
   const plannedRemaining = pending.reduce((sum, c) => sum + c.credits, 0);
   const remaining = plan.honors?.remainingCredits ?? plannedRemaining;
   const finalCredits = completed.gpaCredits + remaining;
@@ -50,7 +50,7 @@ export function honorsProjection(plan) {
 export const requiredGpaText = value => (Math.ceil((value - 1e-10) * 100) / 100).toFixed(2);
 
 export function genEdProgress(plan) {
-  const courses = plan.courses.filter(c => c.category === 'gen' && c.isGenEd);
+  const courses = plan.courses.filter(c => isCounted(c) && c.category === 'gen' && c.isGenEd);
   const completed = courses.filter(passed).length;
   const minimum = plan.genEdMinCourses ?? 4;
   return { total: courses.length, passed: completed, minimum, missing: Math.max(0, minimum - completed), complete: completed >= minimum };

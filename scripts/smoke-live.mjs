@@ -41,6 +41,7 @@ try {
     if (username === accounts[0]) {
       const legacy = structuredClone(SEED);
       legacy.terms.splice(6, 0, { id: 't6', name: 'ปี 3 / ฤดูร้อน', year: 3 });
+      legacy.courses[0].note = 'existing user note'; legacy.courses[0].code = 'MY-COURSE';
       const practice = legacy.courses.find(c => c.name === 'ENG PRACTICE');
       practice.term = 't6'; practice.grade = 'B+'; practice.credits = 2;
       const saved = await client.rpc('save_study_plan', { plan_data: legacy, expected_revision: null });
@@ -94,6 +95,15 @@ try {
   await a.locator('[data-grade=c48]').selectOption('S');
   await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
   assert.equal(await a.locator('#stats .stat-value').first().textContent(),gpaxBeforeSu);
+  const remainingBefore=Number(await a.locator('#honors-remaining').inputValue());
+  await a.locator('[data-toggle-count=c5]').click(); await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.equal(Number(await a.locator('#honors-remaining').inputValue()),remainingBefore-3);
+  await a.locator('[data-toggle-count=c5]').click(); await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.equal(Number(await a.locator('#honors-remaining').inputValue()),remainingBefore);
+  await a.locator('[data-toggle-count=c48]').click(); await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.equal(await a.locator('#gened-progress').getByText('0 / 4 วิชา',{exact:true}).count(),1);
+  await a.locator('[data-toggle-count=c48]').click(); await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.equal(await a.locator('#gened-progress').getByText('1 / 4 วิชา',{exact:true}).count(),1);
   const summary = await a.locator('#stats').textContent();
   for (const group of COURSE_GROUPS) {
     await a.locator('#category-filter').selectOption(group.id);
@@ -114,8 +124,29 @@ try {
   await a.screenshot({ path: '/tmp/grade-garden-honors.png' });
   await a.locator('[data-grade=c0]').selectOption('A');
   await a.waitForFunction(() => document.querySelector('#save-status').dataset.kind === 'saved');
+  const beforeHide=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
+  const otherBefore=(await admin.from('study_plans').select('data').eq('user_id',ids[1])).data;
+  await a.locator('[data-toggle-count=c0]').click();await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.equal(await a.locator('[data-toggle-count=c0]').getAttribute('aria-pressed'),'true');
+  assert.equal(await a.locator('[data-grade=c0]').inputValue(),'A');
+  assert.equal((await a.locator('#stats .stat-value').first().textContent()).trim(),'3.50');
+  const hiddenPlan=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
+  const wanted=structuredClone(beforeHide);wanted.courses.find(c=>c.id==='c0').hidden=true;
+  assert.deepEqual(hiddenPlan,wanted,'hide may change only the selected course flag');
+  await a.locator('[data-edit=c0]').click();await a.locator('#course-form button[type=submit]').click();
+  await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.equal(await a.locator('[data-toggle-count=c0]').getAttribute('aria-pressed'),'true','editing must retain hidden state');
   await login(b, accounts[0]);
   assert.equal(await b.locator('[data-grade=c0]').inputValue(), 'A');
+  assert.equal(await b.locator('[data-toggle-count=c0]').getAttribute('aria-pressed'),'true');
+  await b.locator('[data-toggle-count=c0]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  const restored=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
+  const expectedRestored=structuredClone(beforeHide);expectedRestored.courses.find(c=>c.id==='c0').hidden=false;
+  assert.deepEqual(restored,expectedRestored,'unhide must preserve all prior grades/credits/notes/settings');
+  assert.deepEqual((await admin.from('study_plans').select('data').eq('user_id',ids[1])).data,otherBefore,'another account must be untouched');
+  assert.equal((await b.locator('#stats .stat-value').first().textContent()).trim(),'3.80');
+  await b.setViewportSize({width:390,height:844});assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await b.setViewportSize({width:1440,height:1000});
+
   assert.equal(await b.locator('#honors-remaining').inputValue(), '12');
   assert.equal(await b.locator('[data-grade=c48]').inputValue(),'S');
   assert.equal(await b.locator('#gened-progress').getByText('1 / 4 วิชา',{exact:true}).count(),1);
@@ -135,7 +166,7 @@ try {
   const guest = createClient(url, anon, { auth: { persistSession: false } });
   assert.ok((await guest.from('study_plans').select('*')).error);
   assert.deepEqual(errors, []);
-  console.log('PASS LIVE: direct S/U/A selection on every course, no separate SU UI or mode, correct GPA and GenEd counts, four-course requirement and cross-device persistence.');
+  console.log('PASS LIVE: hide/unhide affects GPA/credits/honors/GenEd, preserves every existing field, survives editing and second-device restore, leaves other accounts untouched, mobile layout and direct grade selection.');
 } finally {
   await browser?.close();
   for (const id of ids) {

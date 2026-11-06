@@ -12,18 +12,24 @@ export function valid(plan) {
   if (!plan.terms.every(t => t && text(t.id, 64) && text(t.name, 50) && Number.isInteger(t.year) && t.year >= 1 && t.year <= 12)) return false;
   if (!plan.courses.every(c => c && text(c.id, 64) && text(c.name, 120) && number(c.credits, 30) && GRADES.includes(c.grade) && (c.code === undefined || typeof c.code === 'string' && c.code.length <= 30) && (c.note === undefined || typeof c.note === 'string' && c.note.length <= 250) && plan.categories.some(x => x.id === c.category) && plan.terms.some(x => x.id === c.term))) return false;
   if (plan.genEdMinCourses !== undefined && (!Number.isInteger(plan.genEdMinCourses) || !number(plan.genEdMinCourses,100))) return false;
+  if (plan.courses.some(c => c.hidden !== undefined && typeof c.hidden !== 'boolean')) return false;
   if (plan.courses.some(c => c.isGenEd !== undefined && typeof c.isGenEd !== 'boolean')) return false;
   if (plan.honors !== undefined && (!plan.honors || ![3.65, 3.25].includes(plan.honors.target) || !(plan.honors.remainingCredits === null || number(plan.honors.remainingCredits, 1000)))) return false;
   return unique(plan.courses) && unique(plan.terms) && unique(plan.categories) && new TextEncoder().encode(JSON.stringify(plan)).length <= 900000;
 }
 
+// Missing hidden means included: old accounts require no migration or rewrite.
+export const isCounted = course => course.hidden !== true;
+
 export function passed(course) {
+  if (!isCounted(course)) return false;
   return course.grade === 'S' || (Object.hasOwn(POINTS, course.grade) && POINTS[course.grade] > 0);
 }
 
 export function metrics(courses) {
   let credits = 0, earned = 0, points = 0, gpaCredits = 0;
   for (const course of courses) {
+    if (!isCounted(course)) continue;
     credits += course.credits;
     if (passed(course)) earned += course.credits;
     if (Object.hasOwn(POINTS, course.grade)) {
