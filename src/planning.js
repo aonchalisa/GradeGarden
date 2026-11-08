@@ -11,6 +11,7 @@ export const COURSE_GROUPS = [
 export const HONORS = [
   { target: 3.6, name: 'เกียรตินิยมอันดับ 1' },
   { target: 3.25, name: 'เกียรตินิยมอันดับ 2' },
+  { target: 3, name: 'มากกว่า 3.00', strict: true },
 ];
 export function courseGroup(category) {
   return COURSE_GROUPS.find(g => g.categories.includes(category)) || COURSE_GROUPS.at(-1);
@@ -94,11 +95,11 @@ export function honorsPlanAdvisor(plan) {
   };
 }
 
-function blocksToGoal(points, credits, target, blockPoints, blockCredits) {
+function blocksToGoal(points, credits, target, blockPoints, blockCredits, strict = false) {
   const gap = target * credits - points;
-  if (gap <= 1e-10) return 0;
+  if (strict ? gap < -1e-10 : gap <= 1e-10) return 0;
   const gain = blockPoints - target * blockCredits;
-  return gain > 0 ? Math.max(0, Math.ceil(gap / gain - 1e-10)) : null;
+  return gain > 0 ? Math.max(0, strict ? Math.floor(gap / gain + 1e-10) + 1 : Math.ceil(gap / gain - 1e-10)) : null;
 }
 
 // Recommendations are computed from saved grades only. Previous sandbox inputs
@@ -129,9 +130,9 @@ export function recommendedHonorsPlans(plan) {
     actualComplete, needsReview, endTermName: plan.terms.at(-1)?.name || 'ท้ายแผน',
     totalPlanCredits: recorded.credits,
     goals: HONORS.map(goal => {
-      const actualReached = recorded.gpa !== null && recorded.gpa + 1e-10 >= goal.target;
+      const actualReached = recorded.gpa !== null && (goal.strict ? recorded.points-goal.target*recorded.gpaCredits>1e-10 : recorded.gpa+1e-10>=goal.target);
       if (!endCredits || (actualReached && !waiting.length)) return { ...goal, actualReached, plans: [] };
-      const nA = blocksToGoal(allAPoints, endCredits, goal.target, 12, 3);
+      const nA = blocksToGoal(allAPoints, endCredits, goal.target, 12, 3, goal.strict);
       const minimum = proposal('all-a', nA ? 'เพิ่มวิชาน้อยที่สุด · A ทุกวิชา' : 'ตั้งเป้า A ในวิชาที่เหลือ', allA,
         [{ grade: 'A', count: nA || 0, creditsEach: 3 }]);
       const proposals = [];
@@ -142,7 +143,7 @@ export function recommendedHonorsPlans(plan) {
         let points = recorded.points + 3.5 * pendingCredits;
         const upgrades = new Set();
         for (const c of ordered) {
-          if (points + 1e-10 >= goal.target * endCredits) break;
+          if (goal.strict ? points-goal.target*endCredits>1e-10 : points+1e-10>=goal.target*endCredits) break;
           upgrades.add(c.id); points += .5 * c.credits;
         }
         if (upgrades.size < pending.length) proposals.push(proposal('within-plan', 'ใช้วิชาที่เหลือในแผนก่อน',
@@ -150,14 +151,14 @@ export function recommendedHonorsPlans(plan) {
       }
       proposals.push(minimum);
       if (nA > 0) {
-        const withOneB = blocksToGoal(allAPoints+10.5, endCredits+3, goal.target, 12, 3);
+        const withOneB = blocksToGoal(allAPoints+10.5, endCredits+3, goal.target, 12, 3, goal.strict);
         proposals.push(proposal('one-b-plus', 'เผื่อ B+ ได้ 1 วิชา', allA,
           [{grade:'A',count:withOneB,creditsEach:3},{grade:'B+',count:1,creditsEach:3}]));
         if (goal.target < 3.5) {
-          const nB = blocksToGoal(allAPoints,endCredits,goal.target,10.5,3);
+          const nB = blocksToGoal(allAPoints,endCredits,goal.target,10.5,3,goal.strict);
           proposals.push(proposal('all-b-plus','เพิ่มด้วย B+ ทุกวิชา',allA,[{grade:'B+',count:nB,creditsEach:3}]));
         } else {
-          const pairs = blocksToGoal(allAPoints,endCredits,goal.target,22.5,6);
+          const pairs = blocksToGoal(allAPoints,endCredits,goal.target,22.5,6,goal.strict);
           if (pairs !== null) proposals.push(proposal('mixed','A และ B+ อย่างละครึ่ง',allA,
             [{grade:'A',count:pairs,creditsEach:3},{grade:'B+',count:pairs,creditsEach:3}]));
         }

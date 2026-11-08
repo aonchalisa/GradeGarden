@@ -195,6 +195,13 @@ try {
   await b.locator('.honors-panel').screenshot({path:'/tmp/grade-garden-automatic-plans.png'});
   await b.setViewportSize({width:390,height:844});assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   const untouched=await clientB.from('study_plans').select('data').eq('user_id',ids[1]).single();assert.deepEqual(untouched.data.data,scenario);
+  assert.equal(await b.locator('[data-honors-target]').count(),3);
+  await b.locator('[data-honors-target="3"]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.equal(await b.locator('[data-honors-target="3"]').getAttribute('aria-pressed'),'true');
+  const savedThree=await clientB.from('study_plans').select('data').eq('user_id',ids[1]).single();assert.equal(savedThree.data.data.honors.target,3);
+  assert.deepEqual(savedThree.data.data.courses,scenario.courses);
+  await b.reload();await b.locator('#app-main').waitFor({state:'visible'});
+  assert.equal(await b.locator('[data-honors-target="3"]').getAttribute('aria-pressed'),'true');
   assert.deepEqual(errors, []);
   console.log('PASS LIVE: automatic concrete course/credit/grade plans without manual simulation controls, actual versus projected GPAX separated, cross-device target selection, hidden course exclusion and preserved data.');
 } finally {

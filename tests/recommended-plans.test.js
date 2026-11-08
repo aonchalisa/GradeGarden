@@ -41,3 +41,12 @@ test('alternative plans are distinct and the result is independent of the minimu
  for(const goal of r.goals){assert.equal(new Set(goal.plans.map(p=>JSON.stringify([p.assignments,p.extra]))).size,goal.plans.length);assertAllMeetGoal(goal);}
  const q=screenshotCase(),a=recommendedHonorsPlans(q);q.target=300;assert.deepEqual(recommendedHonorsPlans(q).goals,a.goals);
 });
+test('above 3.00 is a strict target: exactly 3.00 does not qualify',()=>{
+ const p=plan([{credits:3,grade:'B'}]);p.honors={target:3};
+ const g=recommendedHonorsPlans(p).goals[2];assert.equal(g.target,3);assert.equal(g.strict,true);assert.equal(g.actualReached,false);
+ assert.equal(g.plans[0].extraCourses,1);for(const result of g.plans)assert.ok(result.projectedGpax>3);
+ const exact=plan([{credits:3,grade:'C'}]);const e=recommendedHonorsPlans(exact).goals[2];
+ assert.equal(e.plans[0].extraCourses,2,'one A course would only reach exactly 3.00');
+ for(const result of e.plans)assert.ok(result.projectedGpax>3);
+ const above=plan([{credits:3,grade:'B+'}]);assert.equal(recommendedHonorsPlans(above).goals[2].actualReached,true);
+});
