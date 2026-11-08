@@ -118,12 +118,12 @@ try {
   const fourth = new Set(LEGACY.terms.filter(t => t.year === 4).map(t => t.id));
   assert.equal(await a.locator('.course').count(), LEGACY.courses.filter(c => fourth.has(c.term) && matchesCourse(c, { group: 'required', query: 'COMP' })).length);
   await a.locator('#category-filter').selectOption('all'); await a.locator('#search').fill(''); await a.locator('[data-year="all"]').click();
-  assert.equal(await a.locator('.honors-panel select,.honors-panel input').count(),0);
+  assert.equal(await a.locator('.honors-panel select').count(),0);assert.equal(await a.locator('.honors-panel input').count(),1);
   assert.ok(await a.locator('[data-recommendation]').count()>0);
   await a.locator('[data-honors-target="3.25"]').click();
   await a.waitForFunction(() => document.querySelector('#save-status').dataset.kind === 'saved');
   const settings = await admin.from('study_plans').select('data').eq('user_id', ids[0]).single();
-  assert.deepEqual(settings.data.data.honors, { target: 3.25 });
+  assert.deepEqual(settings.data.data.honors, { target: 3.25, mode: 'honors' });
   await a.screenshot({ path: '/tmp/grade-garden-honors.png' });
   await a.locator('[data-grade=c0]').selectOption('A');
   await a.waitForFunction(() => document.querySelector('#save-status').dataset.kind === 'saved');
@@ -150,7 +150,7 @@ try {
   assert.equal((await b.locator('#stats .stat-value').first().textContent()).trim(),'3.80');
   await b.setViewportSize({width:390,height:844});assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await b.setViewportSize({width:1440,height:1000});
 
-  assert.equal(await b.locator('.honors-panel select,.honors-panel input').count(),0);
+  assert.equal(await b.locator('.honors-panel select').count(),0);assert.equal(await b.locator('.honors-panel input').count(),1);
   assert.equal(await b.locator('[data-grade=c48]').inputValue(),'S');
   assert.equal(await b.locator('#gened-progress').getByText('1 / 4 วิชา',{exact:true}).count(),1);
   assert.equal(await b.locator('[data-honors-target="3.25"]').getAttribute('aria-pressed'), 'true');
@@ -239,7 +239,7 @@ try {
   const ownRow=await clientB.from('study_plans').select('revision').eq('user_id',ids[1]).single();assert.ifError(ownRow.error);
   const scenarioSave=await clientB.rpc('save_study_plan',{plan_data:scenario,expected_revision:ownRow.data.revision});assert.ifError(scenarioSave.error);
   await b.reload();await b.locator('#app-main').waitFor({state:'visible'});await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
-  assert.equal(await b.locator('.honors-panel select,.honors-panel input').count(),0);
+  assert.equal(await b.locator('.honors-panel select').count(),0);assert.equal(await b.locator('.honors-panel input').count(),1);
   assert.ok((await b.locator('[data-honors-target="3.6"]').textContent()).includes('GPAX จริงยังต่ำกว่าเป้า'));
   assert.ok((await b.locator('[data-recommendation="all-a"] .recommended-count').textContent()).includes('เพิ่ม 36 วิชา'));
   assert.ok((await b.locator('[data-recommendation="all-a"] .extra-targets').textContent()).includes('วิชาละ 3 หน่วยกิต'));
@@ -248,14 +248,28 @@ try {
   await b.setViewportSize({width:390,height:844});assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
   const untouched=await clientB.from('study_plans').select('data').eq('user_id',ids[1]).single();assert.deepEqual(untouched.data.data,scenario);
   assert.equal(await b.locator('[data-honors-target]').count(),3);
-  await b.locator('[data-honors-target="3"]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
-  assert.equal(await b.locator('[data-honors-target="3"]').getAttribute('aria-pressed'),'true');
-  const savedThree=await clientB.from('study_plans').select('data').eq('user_id',ids[1]).single();assert.equal(savedThree.data.data.honors.target,3);
-  assert.deepEqual(savedThree.data.data.courses,scenario.courses);
-  await b.reload();await b.locator('#app-main').waitFor({state:'visible'});
-  assert.equal(await b.locator('[data-honors-target="3"]').getAttribute('aria-pressed'),'true');
+  const gpaxBeforeCustom=await b.locator('#stats .stat-value').first().textContent();
+  await b.locator('#custom-gpax').fill('3.40');await b.locator('#custom-gpax-form button[type=submit]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.equal(await b.locator('[data-honors-target="custom"]').getAttribute('aria-pressed'),'true');
+  assert.ok((await b.locator('[data-recommendation="all-a"] .recommended-count').textContent()).includes('เพิ่ม 9 วิชา'));
+  assert.equal(await b.locator('[data-recommendation="all-a"] .recommended-result strong').textContent(),'3.4024');
+  assert.equal(await b.locator('#stats .stat-value').first().textContent(),gpaxBeforeCustom);
+  const customSaved=await clientB.from('study_plans').select('data').eq('user_id',ids[1]).single();const expectedCustom=structuredClone(scenario);expectedCustom.honors={...scenario.honors,target:3.4,mode:'custom',customTarget:3.4};assert.deepEqual(customSaved.data.data,expectedCustom);
+  // Invalid or blank targets cannot replace a previously saved valid choice.
+  for(const value of ['5','-1','']){await b.locator('#custom-gpax').fill(value);await b.locator('#custom-gpax-form button[type=submit]').click();assert.equal(await b.locator('#custom-gpax').evaluate(el=>el.checkValidity()),false);assert.deepEqual((await clientB.from('study_plans').select('data').eq('user_id',ids[1]).single()).data.data,expectedCustom);}
+  await b.locator('#custom-gpax').fill('4');await b.locator('#custom-gpax-form button[type=submit]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.ok((await b.locator('#honors-recommendations').textContent()).includes('ไปไม่ถึงด้วยการลงเพิ่ม'));assert.equal(await b.locator('[data-recommendation]').count(),0);
+  await b.locator('#custom-gpax').fill('3.25');await b.locator('#custom-gpax').press('Enter');await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.equal(await b.locator('[data-honors-target="custom"]').getAttribute('aria-pressed'),'true');assert.equal(await b.locator('[data-honors-target="3.25"]').getAttribute('aria-pressed'),'false');
+  await b.locator('[data-honors-target="3.6"]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');assert.equal(await b.locator('#custom-gpax').inputValue(),'3.25');
+  await b.locator('#custom-gpax').fill('3.40');await b.locator('#custom-gpax-form button[type=submit]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  await b.setViewportSize({width:1440,height:1000});await b.locator('.honors-panel').screenshot({path:'/tmp/grade-garden-custom-gpax.png'});
+  await b.reload();await b.locator('#app-main').waitFor({state:'visible'});assert.equal(await b.locator('#custom-gpax').inputValue(),'3.40');assert.equal(await b.locator('[data-honors-target="custom"]').getAttribute('aria-pressed'),'true');
+  const third=await browser.newContext(),thirdPage=await third.newPage();await login(thirdPage,accounts[1]);assert.equal(await thirdPage.locator('#custom-gpax').inputValue(),'3.40');assert.equal(await thirdPage.locator('[data-honors-target="custom"]').getAttribute('aria-pressed'),'true');await third.close();
+  assert.deepEqual((await clientB.from('study_plans').select('data').eq('user_id',ids[1]).single()).data.data,expectedCustom);
   assert.deepEqual(errors, []);
-  console.log('PASS LIVE: regular/summer creation, horizontal year grouping/scroll retention, mouse/touch/keyboard reorder, scrollable mobile editor, cancel, safe empty/populated term deletion, reload persistence, weighted GPAX and account isolation.');
+  console.log('PASS LIVE: regular/summer creation, horizontal year grouping/scroll retention, mouse/touch/keyboard reorder, scrollable mobile editor, cancel, safe empty/populated term deletion, reload persistence, custom GPAX/validation/4.00 feasibility, preserved grades and cross-device account isolation.');
 } finally {
   await browser?.close();
   for (const id of ids) {

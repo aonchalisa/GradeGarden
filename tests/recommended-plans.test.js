@@ -1,7 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { recommendedHonorsPlans } from '../src/planning.js';
+import { recommendedHonorsPlans, gpaxGoals } from '../src/planning.js';
 import { SEED } from '../src/seed.js';
+import { valid } from '../src/model.js';
 const plan = rows => ({...structuredClone(SEED),courses:rows.map((r,i)=>({id:`r${i}`,name:`Course ${i}`,category:'core',term:'t8',...r}))});
 const screenshotCase = ()=>plan([...Array.from({length:3},()=>({credits:13,grade:'A'})),...Array.from({length:7},()=>({credits:14,grade:'B'}))]);
 function assertAllMeetGoal(goal){for(const p of goal.plans){assert.ok(p.projectedGpax+1e-10>=goal.target,p.id);assert.equal(p.extraCredits,p.extra.reduce((n,g)=>n+g.count*g.creditsEach,0));}}
@@ -41,12 +42,37 @@ test('alternative plans are distinct and the result is independent of the minimu
  for(const goal of r.goals){assert.equal(new Set(goal.plans.map(p=>JSON.stringify([p.assignments,p.extra]))).size,goal.plans.length);assertAllMeetGoal(goal);}
  const q=screenshotCase(),a=recommendedHonorsPlans(q);q.target=300;assert.deepEqual(recommendedHonorsPlans(q).goals,a.goals);
 });
-test('above 3.00 is a strict target: exactly 3.00 does not qualify',()=>{
- const p=plan([{credits:3,grade:'B'}]);p.honors={target:3};
- const g=recommendedHonorsPlans(p).goals[2];assert.equal(g.target,3);assert.equal(g.strict,true);assert.equal(g.actualReached,false);
- assert.equal(g.plans[0].extraCourses,1);for(const result of g.plans)assert.ok(result.projectedGpax>3);
- const exact=plan([{credits:3,grade:'C'}]);const e=recommendedHonorsPlans(exact).goals[2];
- assert.equal(e.plans[0].extraCourses,2,'one A course would only reach exactly 3.00');
- for(const result of e.plans)assert.ok(result.projectedGpax>3);
- const above=plan([{credits:3,grade:'B+'}]);assert.equal(recommendedHonorsPlans(above).goals[2].actualReached,true);
+test('custom GPAX targets use the requested minimum and preserve every saved grade',()=>{
+ const p=screenshotCase();p.honors={target:3.4,mode:'custom',customTarget:3.4,extraCredits:108};
+ const before=structuredClone(p),r=recommendedHonorsPlans(p),goal=r.goals[2];
+ assert.equal(r.selectedId,'custom');assert.equal(goal.target,3.4);assert.equal(goal.actualReached,false);assert.equal(goal.plans[0].extraCourses,9);
+ assertAllMeetGoal(goal);assert.deepEqual(p,before);
+ p.honors.target=3;p.honors.customTarget=3;
+ assert.equal(recommendedHonorsPlans(p).goals[2].actualReached,true);
+ const exact=plan([{credits:3,grade:'B'}]);exact.honors={target:3};
+ assert.equal(gpaxGoals(exact).selectedId,'custom');assert.equal(recommendedHonorsPlans(exact).goals[2].actualReached,true);
+});
+
+test('preset and custom selections stay distinct even when numeric targets match',()=>{
+ const p=structuredClone(SEED);assert.equal(gpaxGoals(p).selectedId,'3.6');
+ p.honors={target:3.25,mode:'custom'};assert.equal(gpaxGoals(p).customTarget,3.25);
+ p.honors={target:3.25,mode:'custom',customTarget:3.25};assert.equal(gpaxGoals(p).selectedId,'custom');
+ p.honors={...p.honors,target:3.6,mode:'honors'};assert.equal(gpaxGoals(p).selectedId,'3.6');assert.equal(gpaxGoals(p).customTarget,3.25);
+ p.honors.target=3.65;assert.equal(gpaxGoals(p).selectedId,'3.6');
+});
+
+test('a 4.00 goal rejects impossible additions and supports all-A pending grades',()=>{
+ const p=plan([{credits:3,grade:'B'},{credits:3,grade:''}]);p.honors={target:4,mode:'custom',customTarget:4};
+ const g=recommendedHonorsPlans(p).goals[2];assert.equal(g.unreachable,true);assert.deepEqual(g.plans,[]);
+ p.courses[0].grade='A';const attainable=recommendedHonorsPlans(p).goals[2];assert.equal(attainable.unreachable,undefined);assertAllMeetGoal(attainable);assert.equal(attainable.plans[0].extraCredits,0);
+ for(const target of [0,2.75,3.25,3.5,3.75,3.99]){p.courses[0].grade='C';p.honors.target=target;p.honors.customTarget=target;assertAllMeetGoal(recommendedHonorsPlans(p).goals[2]);}
+});
+
+test('custom settings validate and survive JSON backups without losing legacy preferences',()=>{
+ const p=structuredClone(SEED);p.honors={target:3.42,mode:'custom',customTarget:3.42,extraCredits:108};
+ assert.ok(valid(p));assert.deepEqual(JSON.parse(JSON.stringify(p)).honors,p.honors);
+ for(const value of [-1,4.01,NaN,Infinity,'3.4',null]){p.honors.target=value;assert.equal(valid(p),false);}
+ p.honors.target=3.42;for(const value of [-1,5,'3.4']){p.honors.customTarget=value;assert.equal(valid(p),false);}
+ p.honors.customTarget=3.42;p.honors.mode='unknown';assert.equal(valid(p),false);
+ const old=structuredClone(SEED);old.honors={target:3,extraCredits:108};const before=structuredClone(old);assert.ok(valid(old));gpaxGoals(old);assert.deepEqual(old,before);
 });

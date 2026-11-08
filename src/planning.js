@@ -12,8 +12,16 @@ export const COURSE_GROUPS = [
 export const HONORS = [
   { target: 3.6, name: 'เกียรตินิยมอันดับ 1' },
   { target: 3.25, name: 'เกียรตินิยมอันดับ 2' },
-  { target: 3, name: 'มากกว่า 3.00', strict: true },
 ];
+export const validGpaxTarget = value => Number.isFinite(value) && value >= 0 && value <= 4;
+
+export function gpaxGoals(plan) {
+  const saved = plan.honors || {}, presets = HONORS.slice(0, 2).map(goal => ({ ...goal, id: String(goal.target) }));
+  const isPreset = [3.6, 3.65, 3.25].includes(saved.target);
+  const customTarget = saved.mode === 'custom' && validGpaxTarget(saved.target) ? saved.target : validGpaxTarget(saved.customTarget) ? saved.customTarget : !isPreset && validGpaxTarget(saved.target) ? saved.target : 3;
+  const selectedId = saved.mode === 'custom' || !isPreset && validGpaxTarget(saved.target) ? 'custom' : saved.target === 3.25 ? '3.25' : '3.6';
+  return { selectedId, customTarget, goals: [...presets, { id: 'custom', target: customTarget, name: 'ตั้งเป้า GPAX เอง', custom: true }] };
+}
 export function courseGroup(category) {
   return COURSE_GROUPS.find(g => g.categories.includes(category)) || COURSE_GROUPS.at(-1);
 }
@@ -106,6 +114,7 @@ function blocksToGoal(points, credits, target, blockPoints, blockCredits, strict
 // Recommendations are computed from saved grades only. Previous sandbox inputs
 // (extraCredits, pendingGpa, etc.) never change the real GPAX or this baseline.
 export function recommendedHonorsPlans(plan) {
+  const choices = gpaxGoals(plan);
   const active = plan.courses.filter(isCounted), recorded = metrics(active);
   const waiting = active.filter(c => c.grade === '' || c.grade === 'I');
   const pending = waiting.filter(c => c.credits > 0);
@@ -129,11 +138,13 @@ export function recommendedHonorsPlans(plan) {
   const allAPoints = recorded.points + 4 * pendingCredits;
   return { currentGpax: recorded.gpa, gradedCredits: recorded.gpaCredits, pendingCredits, pendingCount: pending.length,
     actualComplete, needsReview, endTermName: orderedTerms(plan.terms).at(-1)?.name || 'ท้ายแผน',
-    totalPlanCredits: recorded.credits,
-    goals: HONORS.map(goal => {
+    totalPlanCredits: recorded.credits, selectedId: choices.selectedId, customTarget: choices.customTarget,
+    goals: choices.goals.map(goal => {
       const actualReached = recorded.gpa !== null && (goal.strict ? recorded.points-goal.target*recorded.gpaCredits>1e-10 : recorded.gpa+1e-10>=goal.target);
       if (!endCredits || (actualReached && !waiting.length)) return { ...goal, actualReached, plans: [] };
       const nA = blocksToGoal(allAPoints, endCredits, goal.target, 12, 3, goal.strict);
+      // A lower existing grade cannot reach exactly 4.00 through finite additions.
+      if (nA === null) return { ...goal, actualReached, unreachable: true, plans: [], minimumExtraCredits: null };
       const minimum = proposal('all-a', nA ? 'เพิ่มวิชาน้อยที่สุด · A ทุกวิชา' : 'ตั้งเป้า A ในวิชาที่เหลือ', allA,
         [{ grade: 'A', count: nA || 0, creditsEach: 3 }]);
       const proposals = [];
