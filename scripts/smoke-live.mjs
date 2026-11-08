@@ -158,6 +158,26 @@ try {
   await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
   assert.ok((await b.locator('#honors-recommendations').textContent()).includes('ตั้งเป้า'));
   await b.setViewportSize({width:390,height:844});assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await b.setViewportSize({width:1440,height:1000});
+  // Add summer between academic terms, then edit order without losing courses.
+  await b.locator('#add-term').click();await b.locator('#term-form [name=name]').fill('ปี 1 / ฤดูร้อน');await b.locator('#term-form [name=year]').fill('1');await b.locator('#term-form [name=afterTerm]').selectOption('t1');
+  await b.locator('#term-form button[type=submit]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  const afterSummer=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
+  const summer=afterSummer.terms.find(t=>t.name==='ปี 1 / ฤดูร้อน');assert.equal(afterSummer.terms[2].id,summer.id);
+  await b.locator(`[data-add="${summer.id}"]`).click();await b.locator('#course-form [name=name]').fill('SUMMER TEST');await b.locator('#course-form [name=credits]').fill('3');await b.locator('#course-form [name=grade]').selectOption('B');await b.locator('#course-form button[type=submit]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  const orderBefore=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
+  const globalBefore=await b.locator('#stats .stat-value').first().textContent();
+  assert.ok((await b.locator('[data-term=t1] .term-metrics span').nth(1).textContent()).includes('4.00'));
+  await b.locator('#edit-term-order').click();await b.locator(`[data-order-position="${summer.id}"]`).selectOption('1');
+  await b.locator('#term-order-dialog .dialog-actions [data-close]').click();
+  assert.equal((await b.locator('.term').evaluateAll(nodes=>nodes.map(n=>n.dataset.term)))[2],summer.id,'cancel must leave order unchanged');
+  await b.locator('#edit-term-order').click();await b.locator(`[data-order-position="${summer.id}"]`).selectOption('1');await b.locator('#term-order-form button[type=submit]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.equal((await b.locator('.term').evaluateAll(nodes=>nodes.map(n=>n.dataset.term)))[1],summer.id);
+  assert.ok((await b.locator('[data-term=t1] .term-metrics span').nth(1).textContent()).includes('3.50'));
+  assert.equal(await b.locator('#stats .stat-value').first().textContent(),globalBefore);
+  const orderAfter=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
+  const expectedOrder=structuredClone(orderBefore);const removed=expectedOrder.terms.splice(2,1)[0];expectedOrder.terms.splice(1,0,removed);assert.deepEqual(orderAfter,expectedOrder);
+  await b.reload();await b.locator('#app-main').waitFor({state:'visible'});assert.equal((await b.locator('.term').evaluateAll(nodes=>nodes.map(n=>n.dataset.term)))[1],summer.id);
+  await b.setViewportSize({width:390,height:844});await b.locator('#edit-term-order').click();await b.locator(`[data-order-down="${summer.id}"]`).click();await b.locator(`[data-order-up="${summer.id}"]`).click();assert.equal((await b.locator('[data-order-row]').evaluateAll(nodes=>nodes.map(n=>n.dataset.orderRow)))[1],summer.id);assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await b.locator('#term-order-dialog .dialog-actions [data-close]').click();await b.setViewportSize({width:1440,height:1000});
   await b.locator('#logout').click(); await b.locator('#account-screen').waitFor({ state: 'visible' });
   await login(b, accounts[1]);
   assert.equal(await b.locator('[data-grade=c0]').inputValue(), '');
@@ -203,7 +223,7 @@ try {
   await b.reload();await b.locator('#app-main').waitFor({state:'visible'});
   assert.equal(await b.locator('[data-honors-target="3"]').getAttribute('aria-pressed'),'true');
   assert.deepEqual(errors, []);
-  console.log('PASS LIVE: automatic concrete course/credit/grade plans without manual simulation controls, actual versus projected GPAX separated, cross-device target selection, hidden course exclusion and preserved data.');
+  console.log('PASS LIVE: summer insertion, semester reorder/cancel/mobile controls and persistence, intermediate GPAX follows new order, final GPA/courses/grades/notes preserved, account isolation and target choices.');
 } finally {
   await browser?.close();
   for (const id of ids) {

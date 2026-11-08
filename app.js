@@ -3,12 +3,14 @@ import { SEED } from './src/seed.js';
 import { POINTS, GRADES, valid, metrics, isCounted } from './src/model.js';
 import { setupAccount } from './src/account.js';
 import { COURSE_GROUPS, courseGroup, groupProgress, matchesCourse, recommendedHonorsPlans, genEdProgress } from './src/planning.js';
+import { reorderTerms, termSummaries } from './src/terms.js';
 import './style.css';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fresh=()=>structuredClone(SEED);
 let state=fresh(), year='all',query='',group='all',editing=null,dragged=null;
 let account;
+let termOrderDraft=[];
 function fmt(n){return Number(n).toLocaleString('en-US',{maximumFractionDigits:2});}
 function gpa(n){return n===null?'—':n.toFixed(2);}
 function toast(message){$('#toast').textContent=message;$('#toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').classList.remove('show'),2600);}
@@ -35,8 +37,7 @@ function render(){
  const verify=counted.filter(c=>c.verify).length;
  $('#source-note').textContent=`มี ${verify} วิชารอตรวจข้อมูล${sumMin!==state.target?' · ขั้นต่ำรายหมวดรวม '+fmt(sumMin)+' แต่เป้าหมายรวม '+fmt(state.target)+' หน่วยกิต':''}`;
  $('#years').innerHTML=[['all','ทุกปี'],...Array.from(new Set(state.terms.map(t=>t.year))).sort((a,b)=>a-b).map(y=>[String(y),'ปี '+y])].map(([id,name])=>`<button data-year="${id}" class="${year===id?'active':''}" aria-pressed="${year===id}">${name}</button>`).join('');
- let cumulative=[];
- $('#terms').innerHTML=state.terms.map((t,i)=>{const courses=state.courses.filter(c=>c.term===t.id),m=metrics(courses);cumulative.push(...courses);const cg=metrics(cumulative);if(year!=='all'&&t.year!==+year)return '';const filtered=courses.filter(c=>matchesCourse(c,{query,group}));return `<article class="term" data-term="${esc(t.id)}"><div class="term-head"><div class="term-title-row"><h3>${esc(t.name)}</h3><span class="term-number">${String(i+1).padStart(2,'0')}</span></div><div class="term-metrics"><span>GPA <b>${gpa(m.gpa)}</b></span><span>GPAX <b>${gpa(cg.gpa)}</b></span><span>หน่วยกิต <b>${fmt(m.credits)}</b></span><span>ผ่าน <b>${fmt(m.earned)}</b></span></div></div><div class="course-list">${renderTermCourses(filtered,query||group!=='all')}</div><button class="term-add" data-add="${esc(t.id)}">＋ เพิ่มวิชาในเทอมนี้</button></article>`;}).join('');
+ $('#terms').innerHTML=termSummaries(state).map(({term:t,courses,metrics:m,cumulative:cg},i)=>{if(year!=='all'&&t.year!==+year)return '';const filtered=courses.filter(c=>matchesCourse(c,{query,group}));return `<article class="term" data-term="${esc(t.id)}"><div class="term-head"><div class="term-title-row"><h3>${esc(t.name)}</h3><span class="term-number">${String(i+1).padStart(2,'0')}</span></div><div class="term-metrics"><span>GPA <b>${gpa(m.gpa)}</b></span><span>GPAX <b>${gpa(cg.gpa)}</b></span><span>หน่วยกิต <b>${fmt(m.credits)}</b></span><span>ผ่าน <b>${fmt(m.earned)}</b></span></div></div><div class="course-list">${renderTermCourses(filtered,query||group!=='all')}</div><button class="term-add" data-add="${esc(t.id)}">＋ เพิ่มวิชาในเทอมนี้</button></article>`;}).join('');
  
 }
 function eyeIcon(closed){return `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>${closed?'<path d="m3 3 18 18"/>':''}</svg>`;}
@@ -79,7 +80,22 @@ $('#terms').ondragend=()=>{dragged=null;document.querySelectorAll('.over,.draggi
 $('#settings').onclick=()=>{$('#settings-fields').innerHTML=`<label class="settings-row"><b>หน่วยกิตรวมขั้นต่ำ</b><input type="number" name="target" min="0" max="1000" step="0.5" value="${state.target}" required></label>`+state.categories.filter(c=>c.id!=='unassigned').map(c=>`<label class="settings-row">${esc(c.name)}<input type="number" name="${esc(c.id)}" min="0" max="1000" step="0.5" value="${c.min}" required></label>${c.id==='gen'?`<label class="settings-row settings-subrow">GenEd ที่ต้องผ่าน (วิชา)<input type="number" name="genEdMinCourses" min="0" max="100" step="1" value="${state.genEdMinCourses??4}" required></label><p class="small">GenEd อยู่ในศึกษาทั่วไป ไม่บวกหน่วยกิตซ้ำ</p>`:''}`).join('');$('#settings-dialog').showModal();settingsWarning();};
 function settingsWarning(){const f=$('#settings-form'),sum=state.categories.filter(c=>c.id!=='unassigned').reduce((s,c)=>s+Number(f.elements[c.id]?.value||0),0),target=Number(f.elements.target.value);$('#settings-warning').textContent=`รายหมวดรวม ${fmt(sum)} หน่วยกิต · ยอดรวมขั้นต่ำ ${fmt(target)} หน่วยกิต${sum!==target?' — ยอดสองส่วนไม่ตรงกัน กรุณาตรวจหลักสูตร':''} · ระบบตรวจทั้งรายหมวดและยอดรวม`;}$('#settings-form').oninput=settingsWarning;
 $('#settings-form').onsubmit=e=>{e.preventDefault();const f=e.target;state.target=Number(f.elements.target.value);if(f.elements.genEdMinCourses)state.genEdMinCourses=Number(f.elements.genEdMinCourses.value);for(const c of state.categories)if(c.id!=='unassigned')c.min=Number(f.elements[c.id].value);$('#settings-dialog').close();save();toast('บันทึกเกณฑ์แล้ว');};
-$('#add-term').onclick=()=>{$('#term-form').reset();$('#term-dialog').showModal();};$('#term-form').onsubmit=e=>{e.preventDefault();const f=e.target;const name=f.elements.name.value.trim();if(!name)return;state.terms.push({id:crypto.randomUUID(),name,year:Number(f.elements.year.value)});year='all';$('#term-dialog').close();save();toast('เพิ่มเทอมแล้ว');};
+$('#add-term').onclick=()=>{const f=$('#term-form');f.reset();f.elements.afterTerm.innerHTML='<option value="">ก่อนเทอมแรก</option>'+state.terms.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');f.elements.afterTerm.value=state.terms.at(-1).id;$('#term-dialog').showModal();};
+$('#term-form').onsubmit=e=>{e.preventDefault();const f=e.target,name=f.elements.name.value.trim();if(!name)return;const after=f.elements.afterTerm.value,index=after?state.terms.findIndex(t=>t.id===after)+1:0;if(after&&!index){toast('รายการเทอมเปลี่ยน กรุณาเปิดหน้าต่างเพิ่มเทอมอีกครั้ง');return;}state.terms.splice(index,0,{id:crypto.randomUUID(),name,year:Number(f.elements.year.value)});year='all';$('#term-dialog').close();save();toast('เพิ่มเทอมแล้ว');};
+function renderTermOrder(){
+ $('#term-order-list').innerHTML=termOrderDraft.map((id,index)=>{
+  const term=state.terms.find(t=>t.id===id);
+  if(!term)return '';
+  const count=state.courses.filter(c=>c.term===id).length;
+  return `<div class="term-order-row" data-order-row="${esc(id)}"><span class="term-order-name">${esc(term.name)}<small>${count} วิชา</small></span><label class="term-position">ลำดับ<select data-order-position="${esc(id)}" aria-label="ลำดับ ${esc(term.name)}">${termOrderDraft.map((_,i)=>`<option value="${i}" ${i===index?'selected':''}>${i+1}</option>`).join('')}</select></label><div class="term-order-arrows"><button type="button" class="button" data-order-up="${esc(id)}" aria-label="เลื่อน ${esc(term.name)} ขึ้น" ${index===0?'disabled':''}>↑</button><button type="button" class="button" data-order-down="${esc(id)}" aria-label="เลื่อน ${esc(term.name)} ลง" ${index===termOrderDraft.length-1?'disabled':''}>↓</button></div></div>`;
+ }).join('');
+}
+function moveTerm(id,position){const index=termOrderDraft.indexOf(id);if(index<0||!Number.isInteger(position)||position<0||position>=termOrderDraft.length)return;termOrderDraft.splice(index,1);termOrderDraft.splice(position,0,id);renderTermOrder();}
+$('#edit-term-order').onclick=()=>{termOrderDraft=state.terms.map(t=>t.id);renderTermOrder();$('#term-order-dialog').showModal();};
+$('#term-order-list').onchange=e=>{if(e.target.matches('[data-order-position]'))moveTerm(e.target.dataset.orderPosition,Number(e.target.value));};
+$('#term-order-list').onclick=e=>{const up=e.target.closest('[data-order-up]'),down=e.target.closest('[data-order-down]');if(up)moveTerm(up.dataset.orderUp,termOrderDraft.indexOf(up.dataset.orderUp)-1);if(down)moveTerm(down.dataset.orderDown,termOrderDraft.indexOf(down.dataset.orderDown)+1);};
+$('#term-order-form').onsubmit=e=>{e.preventDefault();try{state=reorderTerms(state,termOrderDraft);}catch{toast('รายการเทอมเปลี่ยน กรุณาปิดแล้วเปิดแก้ลำดับใหม่');return;}year='all';$('#term-order-dialog').close();save();toast('บันทึกลำดับเทอมแล้ว');};
+
 function exportPlan(){const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='grade-garden-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('สำรองข้อมูลแล้ว เก็บไฟล์นี้ไว้ด้วยนะ ♡');}
 $('#export').onclick=exportPlan;
 $('#import').onchange=async e=>{const file=e.target.files[0];if(!file)return;try{if(file.size>2e6)throw Error();let parsed=JSON.parse(await file.text());if(!valid(parsed))throw Error();parsed=updatePlan(parsed);if(confirm('นำเข้าข้อมูลสำรองแทนแผนปัจจุบัน? แนะนำให้สำรองแผนเดิมก่อน')){state=parsed;year='all';save();toast('นำเข้าข้อมูลแล้ว');}}catch{toast('ไฟล์ไม่ถูกต้อง เลือกไฟล์ JSON ที่สำรองจากเว็บนี้');}e.target.value='';};
