@@ -1,4 +1,4 @@
-import { metrics, passed, isCounted } from './model.js';
+import { metrics, passed, isCounted, POINTS } from './model.js';
 
 export const COURSE_GROUPS = [
   { id: 'required', name: 'บังคับเรียน', categories: ['gen', 'science', 'foundation', 'core'], color: '#b8789b' },
@@ -92,4 +92,78 @@ export function honorsPlanAdvisor(plan) {
         gpaxAtThreeCreditCourses: creditsInThreeCreditCourses === null || !simulatedCredits && !creditsInThreeCreditCourses ? null : (simulatedPoints + additionalGpa * creditsInThreeCreditCourses) / (simulatedCredits + creditsInThreeCreditCourses) };
     }),
   };
+}
+
+function blocksToGoal(points, credits, target, blockPoints, blockCredits) {
+  const gap = target * credits - points;
+  if (gap <= 1e-10) return 0;
+  const gain = blockPoints - target * blockCredits;
+  return gain > 0 ? Math.max(0, Math.ceil(gap / gain - 1e-10)) : null;
+}
+
+// Recommendations are computed from saved grades only. Previous sandbox inputs
+// (extraCredits, pendingGpa, etc.) never change the real GPAX or this baseline.
+export function recommendedHonorsPlans(plan) {
+  const active = plan.courses.filter(isCounted), recorded = metrics(active);
+  const waiting = active.filter(c => c.grade === '' || c.grade === 'I');
+  const pending = waiting.filter(c => c.credits > 0);
+  const pendingCredits = pending.reduce((n, c) => n + c.credits, 0);
+  const endCredits = recorded.gpaCredits + pendingCredits;
+  const actualComplete = !waiting.length;
+  const needsReview = active.some(c => (Object.hasOwn(POINTS, c.grade) || c.grade === '' || c.grade === 'I') && (!c.credits || c.verify));
+  function proposal(id, title, assignments, extra) {
+    const assignedPoints = assignments.reduce((n, c) => n + POINTS[c.targetGrade] * c.credits, 0);
+    const extraCredits = extra.reduce((n, g) => n + g.count * g.creditsEach, 0);
+    const extraPoints = extra.reduce((n, g) => n + POINTS[g.grade] * g.count * g.creditsEach, 0);
+    const finalPoints = recorded.points + assignedPoints + extraPoints;
+    const finalCredits = endCredits + extraCredits;
+    return { id, title, assignments, extra: extra.filter(g => g.count > 0), extraCredits,
+      extraCourses: extra.reduce((n, g) => n + g.count, 0), finalCredits,
+      projectedGpax: finalCredits ? finalPoints / finalCredits : null,
+      inPlanGrades: ['A','B+'].map(grade => ({ grade, count: assignments.filter(c => c.targetGrade === grade).length,
+        credits: assignments.filter(c => c.targetGrade === grade).reduce((n,c) => n+c.credits,0) })).filter(g => g.count > 0) };
+  }
+  const allA = pending.map(c => ({ id: c.id, name: c.name, credits: c.credits, targetGrade: 'A' }));
+  const allAPoints = recorded.points + 4 * pendingCredits;
+  return { currentGpax: recorded.gpa, gradedCredits: recorded.gpaCredits, pendingCredits, pendingCount: pending.length,
+    actualComplete, needsReview, endTermName: plan.terms.at(-1)?.name || 'ท้ายแผน',
+    totalPlanCredits: recorded.credits,
+    goals: HONORS.map(goal => {
+      const actualReached = recorded.gpa !== null && recorded.gpa + 1e-10 >= goal.target;
+      if (!endCredits || (actualReached && !waiting.length)) return { ...goal, actualReached, plans: [] };
+      const nA = blocksToGoal(allAPoints, endCredits, goal.target, 12, 3);
+      const minimum = proposal('all-a', nA ? 'เพิ่มวิชาน้อยที่สุด · A ทุกวิชา' : 'ตั้งเป้า A ในวิชาที่เหลือ', allA,
+        [{ grade: 'A', count: nA || 0, creditsEach: 3 }]);
+      const proposals = [];
+      if (!nA && pending.length) {
+        // Start with B+ and upgrade the largest-credit pending courses to A
+        // until the target is met, without ever modifying saved course grades.
+        const ordered = [...pending].sort((a,b) => b.credits-a.credits || String(a.id).localeCompare(String(b.id)));
+        let points = recorded.points + 3.5 * pendingCredits;
+        const upgrades = new Set();
+        for (const c of ordered) {
+          if (points + 1e-10 >= goal.target * endCredits) break;
+          upgrades.add(c.id); points += .5 * c.credits;
+        }
+        if (upgrades.size < pending.length) proposals.push(proposal('within-plan', 'ใช้วิชาที่เหลือในแผนก่อน',
+          pending.map(c => ({ id:c.id,name:c.name,credits:c.credits,targetGrade:upgrades.has(c.id)?'A':'B+' })), []));
+      }
+      proposals.push(minimum);
+      if (nA > 0) {
+        const withOneB = blocksToGoal(allAPoints+10.5, endCredits+3, goal.target, 12, 3);
+        proposals.push(proposal('one-b-plus', 'เผื่อ B+ ได้ 1 วิชา', allA,
+          [{grade:'A',count:withOneB,creditsEach:3},{grade:'B+',count:1,creditsEach:3}]));
+        if (goal.target < 3.5) {
+          const nB = blocksToGoal(allAPoints,endCredits,goal.target,10.5,3);
+          proposals.push(proposal('all-b-plus','เพิ่มด้วย B+ ทุกวิชา',allA,[{grade:'B+',count:nB,creditsEach:3}]));
+        } else {
+          const pairs = blocksToGoal(allAPoints,endCredits,goal.target,22.5,6);
+          if (pairs !== null) proposals.push(proposal('mixed','A และ B+ อย่างละครึ่ง',allA,
+            [{grade:'A',count:pairs,creditsEach:3},{grade:'B+',count:pairs,creditsEach:3}]));
+        }
+      }
+      const seen=new Set();
+      const distinct=proposals.filter(p=>{const key=JSON.stringify([p.assignments.map(c=>[c.id,c.targetGrade]),p.extra]);if(seen.has(key))return false;seen.add(key);return true;});
+      return { ...goal, actualReached, plans: distinct, minimumExtraCredits: minimum.extraCredits };
+    }) };
 }

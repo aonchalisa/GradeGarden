@@ -97,11 +97,11 @@ try {
   await a.locator('[data-grade=c48]').selectOption('S');
   await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
   assert.equal(await a.locator('#stats .stat-value').first().textContent(),gpaxBeforeSu);
-  const remainingBefore=Number(await a.locator('#honors-pending-note').getAttribute('data-credits'));
+  const remainingBefore=Number(await a.locator('#honors-basis').getAttribute('data-credits'));
   await a.locator('[data-toggle-count=c5]').click(); await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
-  assert.equal(Number(await a.locator('#honors-pending-note').getAttribute('data-credits')),remainingBefore-3);
+  assert.equal(Number(await a.locator('#honors-basis').getAttribute('data-credits')),remainingBefore-3);
   await a.locator('[data-toggle-count=c5]').click(); await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
-  assert.equal(Number(await a.locator('#honors-pending-note').getAttribute('data-credits')),remainingBefore);
+  assert.equal(Number(await a.locator('#honors-basis').getAttribute('data-credits')),remainingBefore);
   await a.locator('[data-toggle-count=c48]').click(); await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
   assert.equal(await a.locator('#gened-progress').getByText('0 / 4 วิชา',{exact:true}).count(),1);
   await a.locator('[data-toggle-count=c48]').click(); await a.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
@@ -118,13 +118,12 @@ try {
   const fourth = new Set(LEGACY.terms.filter(t => t.year === 4).map(t => t.id));
   assert.equal(await a.locator('.course').count(), LEGACY.courses.filter(c => fourth.has(c.term) && matchesCourse(c, { group: 'required', query: 'COMP' })).length);
   await a.locator('#category-filter').selectOption('all'); await a.locator('#search').fill(''); await a.locator('[data-year="all"]').click();
-  await a.locator('#honors-pending-grade').selectOption('3.5');
-  await a.locator('#honors-additional-grade').selectOption('4');
-  await a.locator('#honors-extra-credits').fill('6');await a.locator('#honors-extra-credits').press('Tab');
+  assert.equal(await a.locator('.honors-panel select,.honors-panel input').count(),0);
+  assert.ok(await a.locator('[data-recommendation]').count()>0);
   await a.locator('[data-honors-target="3.25"]').click();
   await a.waitForFunction(() => document.querySelector('#save-status').dataset.kind === 'saved');
   const settings = await admin.from('study_plans').select('data').eq('user_id', ids[0]).single();
-  assert.deepEqual(settings.data.data.honors, { target: 3.25, pendingGpa: 3.5, additionalGpa: 4, extraCredits: 6 });
+  assert.deepEqual(settings.data.data.honors, { target: 3.25 });
   await a.screenshot({ path: '/tmp/grade-garden-honors.png' });
   await a.locator('[data-grade=c0]').selectOption('A');
   await a.waitForFunction(() => document.querySelector('#save-status').dataset.kind === 'saved');
@@ -151,22 +150,13 @@ try {
   assert.equal((await b.locator('#stats .stat-value').first().textContent()).trim(),'3.80');
   await b.setViewportSize({width:390,height:844});assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await b.setViewportSize({width:1440,height:1000});
 
-  assert.equal(await b.locator('#honors-pending-grade').inputValue(),'3.5');
-  assert.equal(await b.locator('#honors-additional-grade').inputValue(),'4');
-  assert.equal(await b.locator('#honors-extra-credits').inputValue(),'6');
+  assert.equal(await b.locator('.honors-panel select,.honors-panel input').count(),0);
   assert.equal(await b.locator('[data-grade=c48]').inputValue(),'S');
   assert.equal(await b.locator('#gened-progress').getByText('1 / 4 วิชา',{exact:true}).count(),1);
   assert.equal(await b.locator('[data-honors-target="3.25"]').getAttribute('aria-pressed'), 'true');
-  await b.locator('#honors-extra-credits').fill('200');await b.locator('#honors-extra-credits').press('Tab');
+  await b.locator('[data-honors-target="3.6"]').click();
   await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
-  assert.equal(await b.locator('#honors-extra-credits').inputValue(),'200');
-  assert.ok((await b.locator('#honors-basis').textContent()).includes('200'));
-  await b.locator('#honors-additional-grade').selectOption('3');
-  await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
-  assert.ok((await b.locator('[data-honors-target="3.6"]').textContent()).includes('ยังยกไปถึงเป้านี้ไม่ได้'));
-  await b.locator('#honors-additional-grade').selectOption('4');
-  await b.locator('#honors-extra-credits').fill('0');await b.locator('#honors-extra-credits').press('Tab');
-  await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.ok((await b.locator('#honors-recommendations').textContent()).includes('ตั้งเป้า'));
   await b.setViewportSize({width:390,height:844});assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await b.setViewportSize({width:1440,height:1000});
   await b.locator('#logout').click(); await b.locator('#account-screen').waitFor({ state: 'visible' });
   await login(b, accounts[1]);
@@ -190,8 +180,23 @@ try {
   assert.ifError(attempt.error); assert.deepEqual(attempt.data, []);
   const guest = createClient(url, anon, { auth: { persistSession: false } });
   assert.ok((await guest.from('study_plans').select('*')).error);
+  // Reproduce the reported confusion: old extraCredits=108 must not count as a real achieved GPAX.
+  const scenario=structuredClone(SEED);
+  scenario.courses=[...Array.from({length:3},()=>({credits:13,grade:'A'})),...Array.from({length:7},()=>({credits:14,grade:'B'}))].map((c,i)=>({id:'scenario-'+i,name:'Test course '+i,code:'',category:'core',term:'t8',isGenEd:false,verify:false,note:'',...c}));
+  scenario.honors={target:3.6,extraCredits:108,pendingGpa:4,additionalGpa:4};
+  const ownRow=await clientB.from('study_plans').select('revision').eq('user_id',ids[1]).single();assert.ifError(ownRow.error);
+  const scenarioSave=await clientB.rpc('save_study_plan',{plan_data:scenario,expected_revision:ownRow.data.revision});assert.ifError(scenarioSave.error);
+  await b.reload();await b.locator('#app-main').waitFor({state:'visible'});await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.equal(await b.locator('.honors-panel select,.honors-panel input').count(),0);
+  assert.ok((await b.locator('[data-honors-target="3.6"]').textContent()).includes('GPAX จริงยังต่ำกว่าเป้า'));
+  assert.ok((await b.locator('[data-recommendation="all-a"] .recommended-count').textContent()).includes('เพิ่ม 36 วิชา'));
+  assert.ok((await b.locator('[data-recommendation="all-a"] .extra-targets').textContent()).includes('วิชาละ 3 หน่วยกิต'));
+  assert.equal(await b.locator('[data-recommendation="all-a"] .recommended-result strong').textContent(),'3.6000');
+  await b.locator('.honors-panel').screenshot({path:'/tmp/grade-garden-automatic-plans.png'});
+  await b.setViewportSize({width:390,height:844});assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));
+  const untouched=await clientB.from('study_plans').select('data').eq('user_id',ids[1]).single();assert.deepEqual(untouched.data.data,scenario);
   assert.deepEqual(errors, []);
-  console.log('PASS LIVE: end-of-plan GPAX forecast, unlimited extra-credit scenarios above 138, impossible-grade explanation, persisted assumptions across devices, hidden course exclusion, preserved real grades/notes and existing/new accounts.');
+  console.log('PASS LIVE: automatic concrete course/credit/grade plans without manual simulation controls, actual versus projected GPAX separated, cross-device target selection, hidden course exclusion and preserved data.');
 } finally {
   await browser?.close();
   for (const id of ids) {

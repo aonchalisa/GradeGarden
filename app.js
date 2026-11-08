@@ -2,7 +2,7 @@ import { updatePlan } from './src/plan-updates.js';
 import { SEED } from './src/seed.js';
 import { POINTS, GRADES, valid, metrics, isCounted } from './src/model.js';
 import { setupAccount } from './src/account.js';
-import { COURSE_GROUPS, courseGroup, groupProgress, matchesCourse, honorsPlanAdvisor, genEdProgress } from './src/planning.js';
+import { COURSE_GROUPS, courseGroup, groupProgress, matchesCourse, recommendedHonorsPlans, genEdProgress } from './src/planning.js';
 import './style.css';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -47,33 +47,19 @@ function renderTermCourses(courses,filtering){
 }
 function openCourse(id,term){editing=id||null;const c=id?state.courses.find(x=>x.id===id):{name:'',code:'',credits:3,grade:'',category:'core',term:term||state.terms[0].id,note:'',verify:false};const f=$('#course-form');$('#dialog-title').textContent=id?'แก้ไขวิชา':'เพิ่มวิชาใหม่';f.elements.category.innerHTML=COURSE_GROUPS.map(g=>`<optgroup label="${g.name}">${state.categories.filter(x=>courseGroup(x.id).id===g.id).map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</optgroup>`).join('');f.elements.term.innerHTML=state.terms.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');f.elements.isGenEd.checked=!!c.isGenEd;f.elements.grade.innerHTML=gradeOptions(c.grade);for(const key of ['name','code','credits','grade','category','term','note'])f.elements[key].value=c[key]??'';f.elements.verify.checked=!!c.verify;$('#delete-course').hidden=!id;$('#course-dialog').showModal();}
 function renderHonors(){
- const p=honorsPlanAdvisor(state),selected=state.honors?.target===3.25?3.25:3.6;
- $('#honors-unlimited').textContent=`${fmt(state.target)} หน่วยกิตคือขั้นต่ำจบ ไม่ใช่เพดาน ลงเพิ่มได้ ตัวช่วยนี้ไม่จำกัดจำนวนหน่วยกิตไว้ที่ ${fmt(state.target)}`;
- const gradeName=value=>Object.keys(POINTS).find(key=>POINTS[key]===value)||fmt(value);
- $('#honors-pending-grade').value=String(p.pendingGpa);
- $('#honors-pending-grade').disabled=p.plannedRemaining===0;
- $('#honors-additional-grade').value=String(p.additionalGpa);
- $('#honors-extra-credits').value=p.extraCredits;
- $('#honors-pending-note').dataset.credits=p.plannedRemaining;
- $('#honors-pending-note').textContent=p.plannedRemaining?`ยังรอเกรด ${fmt(p.plannedRemaining)} หน่วยกิต · ใช้เกรดเฉลี่ยที่เลือกเพื่อประมาณการ`:p.needsReview?'มีวิชารอตรวจหน่วยกิต กรอกจำนวนให้ครบก่อนคาดการณ์':'ไม่มีวิชารอเกรดที่คิด GPAX ใช้ค่าจากเกรดที่กรอก';
- $('#honors-summary').innerHTML=`<div><span>GPAX ${esc(p.endTermName)}${p.plannedRemaining?' · คาดการณ์':''}</span><strong>${gpa(p.endGpax)}</strong><small>คำนวณจาก ${fmt(p.endCredits)} หน่วยกิตที่คิดเกรด</small></div><div><span>GPAX หลังลองลงเพิ่ม ${fmt(p.extraCredits)} หน่วยกิต</span><strong>${gpa(p.simulatedGpax)}</strong><small>วิชาที่เพิ่มเฉลี่ย ${gradeName(p.additionalGpa)} (${p.additionalGpa.toFixed(2)})</small></div>`;
- $('#honors-goals').innerHTML=p.goals.map(goal=>{
-   let result,status;
-   if(p.simulatedGpax===null){result='ยังไม่มีข้อมูลหน่วยกิตที่คิดเกรด';status='กรอกเกรด/หน่วยกิตในแผน หรือใส่หน่วยกิตที่จะลองเพิ่มก่อน';}
-   else if(goal.reached){result='ถึงเป้า GPAX นี้แล้ว';status='ไม่ต้องเพิ่มหน่วยกิตเพื่อยก GPAX ตามสมมติฐานนี้';}
-   else if(goal.needed===null){result=`เกรด ${gradeName(p.additionalGpa)} ยังยกไปถึงเป้านี้ไม่ได้`;status=`เกรดเฉลี่ยของวิชาที่เพิ่มต้องสูงกว่า ${goal.target.toFixed(2)} ถึงจะดึง GPAX ขึ้นไปถึงเป้าได้`;}
-   else{result=`ต้องลงเพิ่มอีก <strong>${fmt(goal.needed)} หน่วยกิต</strong>`;status=`ถ้าได้เฉลี่ย ${gradeName(p.additionalGpa)} (${p.additionalGpa.toFixed(2)}) · ประมาณ ${fmt(goal.coursesOfThreeCredits)} วิชา วิชาละ 3 หน่วยกิต (รวม ${fmt(goal.coursesOfThreeCredits*3)}) · GPAX หลังเพิ่มตามจำนวนวิชานี้ ≈ ${goal.gpaxAtThreeCreditCourses.toFixed(4)}`;}
-   return `<button type="button" class="honors-goal ${selected===goal.target?'selected':''} ${goal.needed!==null?'reachable':'unreachable'}" data-honors-target="${goal.target}" aria-pressed="${selected===goal.target}"><span class="honors-name">${goal.name}<span class="goal-check">${selected===goal.target?'✓ เป้าที่เลือก':'เลือกเป้านี้'}</span></span><span class="honors-target">GPAX ${goal.target.toFixed(2)}</span><span class="honors-required">${result}</span><span class="honors-status">${status}</span></button>`;
- }).join('');
- $('#honors-basis').textContent=`ฐานคือทุกเทอมถึง ${p.endTermName} · GPAX จากเกรดที่กรอกแล้ว ${gpa(p.currentGpax)} · ในแผน ${fmt(p.totalPlanCredits)} หน่วยกิต + ที่ลองเพิ่ม ${fmt(p.extraCredits)} = ${fmt(p.totalPlanCredits+p.extraCredits)} หน่วยกิต${p.needsReview?' · มีวิชารอตรวจหน่วยกิต ผลประมาณการอาจเปลี่ยนได้':''}`;
+ const p=recommendedHonorsPlans(state),selected=state.honors?.target===3.25?3.25:3.6;
+ const goal=p.goals.find(g=>g.target===selected);
+ $('#honors-summary').innerHTML=`<div><span>${p.actualComplete?'GPAX ท้ายแผน · '+esc(p.endTermName):'GPAX จากเกรดที่กรอกแล้ว'}</span><strong>${gpa(p.currentGpax)}</strong><small>${fmt(p.gradedCredits)} หน่วยกิตที่คิดเกรดจริง${p.currentGpax===null?'':' · ใช้ค่าก่อนปัด '+p.currentGpax.toFixed(4)}</small></div><div><span>${p.pendingCount?'ยังรอเกรดในแผน':'วิชาในแผนมีผลเกรดแล้ว'}</span><strong>${fmt(p.pendingCredits)} <small>หน่วยกิตที่รอเกรด</small></strong><small>${p.pendingCount?fmt(p.pendingCount)+' วิชา · จะจัดแผนจากวิชาที่เหลือก่อน':p.needsReview?'ยังมีข้อมูลหน่วยกิตที่ควรตรวจ':'ใช้ GPAX ที่กรอกจริงเป็นฐาน ไม่มีหน่วยกิตจำลองมาปน'}</small></div>`;
+ $('#honors-goals').innerHTML=p.goals.map(g=>`<button type="button" class="honors-goal ${selected===g.target?'selected':''}" data-honors-target="${g.target}" aria-pressed="${selected===g.target}"><span class="honors-name">${g.name}<span class="goal-check">${selected===g.target?'✓ เป้าที่เลือก':'เลือกเป้านี้'}</span></span><span class="honors-target">GPAX ${g.target.toFixed(2)}</span><span class="honors-status">${p.currentGpax===null?'ยังไม่มีเกรดจริง':g.actualReached?'GPAX จากเกรดที่กรอกถึงเกณฑ์ตัวเลขนี้แล้ว'+(p.pendingCount?' · ยังต้องรอเกรดที่เหลือ':''):'GPAX จริงยังต่ำกว่าเป้า · ดูแผนแนะนำด้านล่าง'}</span></button>`).join('');
+ if(!goal.plans.length){$('#honors-recommendations').innerHTML=`<div class="plan-empty">${goal.actualReached?'ไม่ต้องลงเพิ่มเพื่อยก GPAX ตามข้อมูลที่กรอกแล้ว':'กรอกเกรดและหน่วยกิตในแผนก่อน ระบบจึงจะแนะนำจำนวนวิชาที่เหมาะกับข้อมูลของคุณได้'}</div>`;}
+ else{
+  const header=goal.minimumExtraCredits>0?`เพื่อไปถึง ${selected.toFixed(2)} แผน A ทุกวิชาต้องเพิ่มอย่างน้อย ${fmt(goal.minimumExtraCredits)} หน่วยกิต ในวิชาเพิ่มเติมวิชาละ 3 หน่วยกิต`:'มีแผนที่ไปถึงเป้าได้โดยไม่เพิ่มวิชา ใช้วิชาที่เหลือในแผนก่อน';
+  $('#honors-recommendations').innerHTML=`<p class="plan-intro">${header}</p><div class="recommended-plans">${goal.plans.map((plan,index)=>`<article class="recommended-plan ${index===0?'recommended-primary':''}" data-recommendation="${plan.id}"><div class="recommended-title"><span>${index===0?'แผนแนะนำ':'อีกทางเลือก'}</span><h3>${plan.title}</h3></div><div class="recommended-count">${plan.extraCourses?`เพิ่ม ${fmt(plan.extraCourses)} วิชา`:'ไม่ต้องเพิ่มวิชา'}<small>${plan.extraCredits?`รวม ${fmt(plan.extraCredits)} หน่วยกิตเพิ่มเติม`:'0 หน่วยกิตเพิ่มเติม'}</small></div>${plan.inPlanGrades.length?`<div class="in-plan-target"><b>วิชาที่ยังรอเกรดในแผน</b>${plan.inPlanGrades.map(g=>`<p>ตั้งเป้า ${g.grade} ${fmt(g.count)} วิชา · รวม ${fmt(g.credits)} หน่วยกิต</p>`).join('')}</div>`:''}${plan.extra.length?`<ul class="extra-targets">${plan.extra.map(g=>`<li><b>${g.grade} ${fmt(g.count)} วิชา</b> · วิชาละ ${fmt(g.creditsEach)} หน่วยกิต</li>`).join('')}</ul>`:''}<div class="recommended-result"><span>GPAX คาดการณ์หลังทำตามแผน</span><strong>${plan.projectedGpax.toFixed(4)}</strong><small>ค่านี้เป็นการคาดการณ์ ไม่ใช่ GPAX จริงตอนนี้</small></div>${plan.assignments.length?`<details class="assignment-details"><summary>ดูตัวอย่างเป้าเกรดรายวิชา</summary><p class="small">จัดตามหน่วยกิต สลับวิชาหน่วยกิตเท่ากันได้ ไม่ได้ประเมินความยากของแต่ละวิชา</p>${plan.assignments.map(c=>`<div><span>${esc(c.name)} · ${fmt(c.credits)} หน่วยกิต</span><b>${c.targetGrade}</b></div>`).join('')}</details>`:''}</article>`).join('')}</div>${goal.minimumExtraCredits>30?`<p class="plan-math-note">จำนวนที่ต้องเพิ่มสูงเพราะมีหน่วยกิตเดิม ${fmt(p.gradedCredits)} หน่วยกิตถ่วงอยู่แล้ว A ทุกวิชาเป็นขอบเขตที่เพิ่มน้อยที่สุดในวิชา 3 หน่วยกิต หากมี B+ จะต้องเพิ่มมากขึ้นตามทางเลือกด้านบน</p>`:''}`;
+ }
+ $('#honors-basis').dataset.credits=p.pendingCredits;
+ $('#honors-basis').textContent=`แผนถึง ${p.endTermName} · หน่วยกิตในแผน ${fmt(p.totalPlanCredits)} · ขั้นต่ำจบ ${fmt(state.target)} ไม่ใช่เพดาน${p.needsReview?' · มีวิชารอตรวจข้อมูลหน่วยกิต ผลแนะนำอาจเปลี่ยนได้เมื่อกรอกครบ':''}`;
 }
 function setHonors(changes){state.honors={...state.honors,target:state.honors?.target===3.25?3.25:3.6,...changes};save();}
-const advisorOptions=Object.entries(POINTS).map(([grade,value])=>`<option value="${value}">${grade} (${value.toFixed(2)})</option>`).join('');
-$('#honors-pending-grade').innerHTML=advisorOptions;
-$('#honors-additional-grade').innerHTML=advisorOptions;
-$('#honors-pending-grade').onchange=e=>setHonors({pendingGpa:Number(e.target.value)});
-$('#honors-additional-grade').onchange=e=>setHonors({additionalGpa:Number(e.target.value)});
-$('#honors-extra-credits').onchange=e=>{if(e.target.value===''||!e.target.checkValidity()||!Number.isSafeInteger(Number(e.target.value)*2)){renderHonors();return;}setHonors({extraCredits:Number(e.target.value)});};
 $('#honors-goals').onclick=e=>{const b=e.target.closest('[data-honors-target]');if(b)setHonors({target:Number(b.dataset.honorsTarget)});};
 $('#add-course').onclick=()=>openCourse();
 $('#years').onclick=e=>{const b=e.target.closest('[data-year]');if(b){year=b.dataset.year;render();}};
