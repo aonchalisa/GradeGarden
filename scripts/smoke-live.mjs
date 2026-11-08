@@ -167,10 +167,10 @@ try {
   const orderBefore=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
   const globalBefore=await b.locator('#stats .stat-value').first().textContent();
   assert.ok((await b.locator('[data-term=t1] .term-metrics span').nth(1).textContent()).includes('4.00'));
-  await b.locator('#edit-term-order').click();await b.locator(`[data-order-position="${summer.id}"]`).selectOption('1');
+  await b.locator('#edit-term-order').click();await b.locator(`[data-order-position="${summer.id}"]`).selectOption({value:'1'});
   await b.locator('#term-order-dialog .dialog-actions [data-close]').click();
   assert.equal((await b.locator('.term').evaluateAll(nodes=>nodes.map(n=>n.dataset.term)))[2],summer.id,'cancel must leave order unchanged');
-  await b.locator('#edit-term-order').click();await b.locator(`[data-order-position="${summer.id}"]`).selectOption('1');await b.locator('#term-order-form button[type=submit]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  await b.locator('#edit-term-order').click();await b.locator(`[data-order-position="${summer.id}"]`).selectOption({value:'1'});await b.locator('#term-order-form button[type=submit]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
   assert.equal((await b.locator('.term').evaluateAll(nodes=>nodes.map(n=>n.dataset.term)))[1],summer.id);
   assert.ok((await b.locator('[data-term=t1] .term-metrics span').nth(1).textContent()).includes('3.50'));
   assert.equal(await b.locator('#stats .stat-value').first().textContent(),globalBefore);
