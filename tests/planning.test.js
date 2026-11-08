@@ -9,8 +9,8 @@ test('honors uses weighted points and pending numeric credits, excluding S/U/W',
   const p = plan([{ credits: 30, grade: 'A' }, { credits: 30, grade: 'B' }, { credits: 20, grade: '' }, { credits: 10, grade: 'I' }, { credits: 6, grade: 'S' }, { credits: 3, grade: 'W' }, { credits: 3, grade: 'U' }]);
   const r = honorsProjection(p);
   assert.equal(r.currentGpax, 3.5); assert.equal(r.remaining, 30); assert.equal(r.gradedCredits, 60);
-  assert.ok(Math.abs(r.goals[0].required - 3.95) < 1e-10);
-  assert.equal(requiredGpaText(r.goals[0].required), '3.95');
+  assert.ok(Math.abs(r.goals[0].required - 3.8) < 1e-10);
+  assert.equal(requiredGpaText(r.goals[0].required), '3.80');
   assert.ok(Math.abs(r.goals[1].required - 2.75) < 1e-10);
   assert.equal(r.goals[0].reachable, true);
   p.honors = { target: 3.25, remainingCredits: 10 };
@@ -50,4 +50,10 @@ test('new honors settings survive validation and old plans remain valid', () => 
   p.honors.remainingCredits = 12; assert.ok(valid(p));
   p.honors.remainingCredits = -1; assert.equal(valid(p), false);
   p.honors = { target: 5, remainingCredits: 12 }; assert.equal(valid(p), false);
+});
+
+test('first honors is 3.60 while legacy saved targets remain readable',()=>{
+ const p=structuredClone(SEED);p.honors={target:3.65,remainingCredits:12};
+ assert.ok(valid(p));assert.equal(honorsProjection(p).goals[0].target,3.6);
+ p.honors.target=3.6;assert.ok(valid(p));assert.equal(honorsProjection(p).goals[1].target,3.25);
 });

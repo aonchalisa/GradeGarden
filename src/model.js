@@ -15,7 +15,7 @@ export function valid(plan) {
   if (plan.courses.some(c => c.accentColor !== undefined && (typeof c.accentColor !== 'string' || !/^#[0-9a-f]{6}$/i.test(c.accentColor)))) return false;
   if (plan.courses.some(c => c.hidden !== undefined && typeof c.hidden !== 'boolean')) return false;
   if (plan.courses.some(c => c.isGenEd !== undefined && typeof c.isGenEd !== 'boolean')) return false;
-  if (plan.honors !== undefined && (!plan.honors || ![3.65, 3.25].includes(plan.honors.target) || !(plan.honors.remainingCredits === null || number(plan.honors.remainingCredits, 1000)))) return false;
+  if (plan.honors !== undefined && (!plan.honors || ![3.6, 3.65, 3.25].includes(plan.honors.target) || !(plan.honors.remainingCredits === null || number(plan.honors.remainingCredits, 1000)))) return false;
   return unique(plan.courses) && unique(plan.terms) && unique(plan.categories) && new TextEncoder().encode(JSON.stringify(plan)).length <= 900000;
 }
 

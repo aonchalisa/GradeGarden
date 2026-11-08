@@ -9,7 +9,7 @@ export const COURSE_GROUPS = [
   { id: 'unassigned', name: 'ยังไม่จัดหมวด', categories: ['unassigned'], color: '#9a8e98' },
 ];
 export const HONORS = [
-  { target: 3.65, name: 'เกียรตินิยมอันดับ 1' },
+  { target: 3.6, name: 'เกียรตินิยมอันดับ 1' },
   { target: 3.25, name: 'เกียรตินิยมอันดับ 2' },
 ];
 export function courseGroup(category) {

@@ -47,7 +47,7 @@ function renderTermCourses(courses,filtering){
 }
 function openCourse(id,term){editing=id||null;const c=id?state.courses.find(x=>x.id===id):{name:'',code:'',credits:3,grade:'',category:'core',term:term||state.terms[0].id,note:'',verify:false};const f=$('#course-form');$('#dialog-title').textContent=id?'แก้ไขวิชา':'เพิ่มวิชาใหม่';f.elements.category.innerHTML=COURSE_GROUPS.map(g=>`<optgroup label="${g.name}">${state.categories.filter(x=>courseGroup(x.id).id===g.id).map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</optgroup>`).join('');f.elements.term.innerHTML=state.terms.map(x=>`<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('');f.elements.isGenEd.checked=!!c.isGenEd;f.elements.grade.innerHTML=gradeOptions(c.grade);for(const key of ['name','code','credits','grade','category','term','note'])f.elements[key].value=c[key]??'';f.elements.verify.checked=!!c.verify;$('#delete-course').hidden=!id;$('#course-dialog').showModal();}
 function renderHonors(){
- const projection=honorsProjection(state), selected=state.honors?.target??3.65;
+ const projection=honorsProjection(state), selected=state.honors?.target===3.25?3.25:3.6;
  $('#honors-remaining').value=projection.remaining;
  $('#honors-goals').innerHTML=projection.goals.map(goal=>{
    let result, status;
@@ -58,7 +58,7 @@ function renderHonors(){
  const maximum=projection.maxGpax===null?'—':projection.maxGpax.toFixed(2);
  $('#honors-basis').textContent=`เกรดที่กรอกแล้ว ${fmt(projection.gradedCredits)} หน่วยกิต · ยังไม่ออกเกรดตามแผน ${fmt(projection.plannedRemaining)} หน่วยกิต · ${state.honors?.remainingCredits!=null?'ใช้จำนวนที่กำหนดเอง (ไม่เปลี่ยนตามการปิดตา)':'ใช้จำนวนตามแผน เฉพาะวิชาที่เปิดตา'} · ถ้าที่เหลือได้ A ทั้งหมด GPAX สูงสุด ${maximum}${projection.needsReview?' · มีวิชารอตรวจหน่วยกิต':''}`;
 }
-function setHonors(changes){state.honors={target:state.honors?.target??3.65,remainingCredits:state.honors?.remainingCredits??null,...changes};save();}
+function setHonors(changes){state.honors={target:state.honors?.target===3.25?3.25:3.6,remainingCredits:state.honors?.remainingCredits??null,...changes};save();}
 $('#honors-goals').onclick=e=>{const b=e.target.closest('[data-honors-target]');if(b)setHonors({target:Number(b.dataset.honorsTarget)});};
 $('#honors-remaining').onchange=e=>{if(!e.target.value||!e.target.checkValidity()){renderHonors();return;}setHonors({remainingCredits:Number(e.target.value)});};
 $('#honors-auto').onclick=()=>setHonors({remainingCredits:null});
