@@ -55,3 +55,41 @@ export function genEdProgress(plan) {
   const minimum = plan.genEdMinCourses ?? 4;
   return { total: courses.length, passed: completed, minimum, missing: Math.max(0, minimum - completed), complete: completed >= minimum };
 }
+
+// Extra credits are unconstrained by the graduation minimum (e.g. 138).
+export function creditsToTarget(points, credits, target, futureGpa) {
+  const gap = target * credits - points;
+  if (credits > 0 && gap <= 1e-10) return 0;
+  if (futureGpa <= target) return null;
+  if (!credits) return 1;
+  return Math.max(0, Math.ceil(gap / (futureGpa - target) - 1e-10));
+}
+
+export function honorsPlanAdvisor(plan) {
+  // The revised helper uses real pending courses, not an old manually entered
+  // "remaining credits" value. Keep that saved preference intact for compatibility.
+  const base = honorsProjection({ ...plan, honors: { ...plan.honors, remainingCredits: null } });
+  const recorded = metrics(plan.courses);
+  const pendingGpa = plan.honors?.pendingGpa ?? 4;
+  const additionalGpa = plan.honors?.additionalGpa ?? 4;
+  const extraCredits = plan.honors?.extraCredits ?? 0;
+  const endCredits = recorded.gpaCredits + base.plannedRemaining;
+  const endPoints = recorded.points + pendingGpa * base.plannedRemaining;
+  const endGpax = endCredits ? endPoints / endCredits : null;
+  const simulatedCredits = endCredits + extraCredits;
+  const simulatedPoints = endPoints + additionalGpa * extraCredits;
+  const simulatedGpax = simulatedCredits ? simulatedPoints / simulatedCredits : null;
+  return {
+    ...base, pendingGpa, additionalGpa, extraCredits, endCredits, endPoints, endGpax,
+    endTermName: plan.terms.at(-1)?.name || 'ท้ายแผน',
+    simulatedGpax, totalPlanCredits: recorded.credits,
+    goals: HONORS.map(goal => {
+      const needed = simulatedCredits ? creditsToTarget(simulatedPoints, simulatedCredits, goal.target, additionalGpa) : null;
+      const creditsInThreeCreditCourses = needed === null ? null : Math.ceil(needed / 3) * 3;
+      return { ...goal, needed, reached: simulatedGpax !== null && simulatedGpax + 1e-10 >= goal.target,
+        coursesOfThreeCredits: needed === null ? null : Math.ceil(needed / 3),
+        gpaxAtNeeded: needed === null ? null : (simulatedPoints + additionalGpa * needed) / (simulatedCredits + needed),
+        gpaxAtThreeCreditCourses: creditsInThreeCreditCourses === null || !simulatedCredits && !creditsInThreeCreditCourses ? null : (simulatedPoints + additionalGpa * creditsInThreeCreditCourses) / (simulatedCredits + creditsInThreeCreditCourses) };
+    }),
+  };
+}
