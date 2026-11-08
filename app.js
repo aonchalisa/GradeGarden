@@ -3,14 +3,14 @@ import { SEED } from './src/seed.js';
 import { POINTS, GRADES, valid, metrics, isCounted } from './src/model.js';
 import { setupAccount } from './src/account.js';
 import { COURSE_GROUPS, courseGroup, groupProgress, matchesCourse, recommendedHonorsPlans, genEdProgress } from './src/planning.js';
-import { reorderTerms, termSummaries } from './src/terms.js';
+import { reorderTerms, termSummaries, termsByYear, orderedTerms, termKind, insertTerm, removeTerm, moveTermWithinYear } from './src/terms.js';
 import './style.css';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fresh=()=>structuredClone(SEED);
 let state=fresh(), year='all',query='',group='all',editing=null,dragged=null;
 let account;
-let termOrderDraft=[];
+let termOrderDraft=[], deletingTerm=null, termDrag=null;
 function fmt(n){return Number(n).toLocaleString('en-US',{maximumFractionDigits:2});}
 function gpa(n){return n===null?'—':n.toFixed(2);}
 function toast(message){$('#toast').textContent=message;$('#toast').classList.add('show');clearTimeout(toast.timer);toast.timer=setTimeout(()=>$('#toast').classList.remove('show'),2600);}
@@ -18,6 +18,7 @@ function save(){account?.save(state);render();}
 function cat(id){return state.categories.find(c=>c.id===id);}
 function gradeOptions(selected){return GRADES.map(g=>`<option value="${g}" ${g===selected?'selected':''}>${g||'—'}</option>`).join('');}
 function render(){
+ const yearScroll=new Map([...document.querySelectorAll('.academic-year')].map(el=>[el.dataset.plannerYear,el.querySelector('.year-terms').scrollLeft]));
  const counted=state.courses.filter(isCounted),hiddenCount=state.courses.length-counted.length;
  const m=metrics(state.courses),complete=COURSE_GROUPS.filter(g=>g.id!=='unassigned'&&groupProgress(state,g).complete).length,totalCats=COURSE_GROUPS.filter(g=>g.id!=='unassigned').length;
  const sumMin=state.categories.reduce((s,c)=>s+c.min,0),allRequirements=complete===totalCats&&m.earned>=state.target;
@@ -37,8 +38,14 @@ function render(){
  const verify=counted.filter(c=>c.verify).length;
  $('#source-note').textContent=`มี ${verify} วิชารอตรวจข้อมูล${sumMin!==state.target?' · ขั้นต่ำรายหมวดรวม '+fmt(sumMin)+' แต่เป้าหมายรวม '+fmt(state.target)+' หน่วยกิต':''}`;
  $('#years').innerHTML=[['all','ทุกปี'],...Array.from(new Set(state.terms.map(t=>t.year))).sort((a,b)=>a-b).map(y=>[String(y),'ปี '+y])].map(([id,name])=>`<button data-year="${id}" class="${year===id?'active':''}" aria-pressed="${year===id}">${name}</button>`).join('');
- $('#terms').innerHTML=termSummaries(state).map(({term:t,courses,metrics:m,cumulative:cg},i)=>{if(year!=='all'&&t.year!==+year)return '';const filtered=courses.filter(c=>matchesCourse(c,{query,group}));return `<article class="term" data-term="${esc(t.id)}"><div class="term-head"><div class="term-title-row"><h3>${esc(t.name)}</h3><span class="term-number">${String(i+1).padStart(2,'0')}</span></div><div class="term-metrics"><span>GPA <b>${gpa(m.gpa)}</b></span><span>GPAX <b>${gpa(cg.gpa)}</b></span><span>หน่วยกิต <b>${fmt(m.credits)}</b></span><span>ผ่าน <b>${fmt(m.earned)}</b></span></div></div><div class="course-list">${renderTermCourses(filtered,query||group!=='all')}</div><button class="term-add" data-add="${esc(t.id)}">＋ เพิ่มวิชาในเทอมนี้</button></article>`;}).join('');
+ const summaries=termSummaries(state),byTerm=new Map(summaries.map((s,i)=>[s.term.id,{...s,number:i+1}]));
+ $('#terms').innerHTML=termsByYear(state.terms).filter(g=>year==='all'||g.year===+year).map(g=>`<section class="academic-year" data-planner-year="${g.year}"><div class="year-heading"><h3>ปี ${g.year}</h3><span>${g.terms.length} เทอม · เลื่อนซ้าย–ขวาดูเทอมในปีนี้</span></div><div class="year-terms" tabindex="0" role="region" aria-label="เทอมของปี ${g.year}">${g.terms.map(t=>renderTerm(byTerm.get(t.id))).join('')}</div></section>`).join('');
+ document.querySelectorAll('.academic-year').forEach(el=>{el.querySelector('.year-terms').scrollLeft=yearScroll.get(el.dataset.plannerYear)||0;});
  
+}
+function renderTerm({term:t,courses,metrics:m,cumulative:cg,number}){
+ const filtered=courses.filter(c=>matchesCourse(c,{query,group}));
+ return `<article class="term ${termKind(t)==='summer'?'summer-term':''}" data-term="${esc(t.id)}"><div class="term-head"><div class="term-title-row"><h3>${esc(t.name)}${termKind(t)==='summer'?'<span class="summer-badge">ซัมเมอร์</span>':''}</h3><div class="term-tools"><span class="term-number">${String(number).padStart(2,'0')}</span><button type="button" class="delete-term" data-delete-term="${esc(t.id)}" aria-label="ลบ ${esc(t.name)}" ${state.terms.length===1?'disabled title="ต้องเหลืออย่างน้อย 1 เทอม"':''}>ลบเทอม</button></div></div><div class="term-metrics"><span>GPA <b>${gpa(m.gpa)}</b></span><span>GPAX <b>${gpa(cg.gpa)}</b></span><span>หน่วยกิต <b>${fmt(m.credits)}</b></span><span>ผ่าน <b>${fmt(m.earned)}</b></span></div></div><div class="course-list">${renderTermCourses(filtered,query||group!=='all')}</div><button class="term-add" data-add="${esc(t.id)}">＋ เพิ่มวิชาในเทอมนี้</button></article>`;
 }
 function eyeIcon(closed){return `<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>${closed?'<path d="m3 3 18 18"/>':''}</svg>`;}
 function courseCard(c){return `<div class="course ${!isCounted(c)?'course-excluded':''}" draggable="true" data-course="${esc(c.id)}" style="--category:${c.accentColor||cat(c.category).color}"><span class="handle" aria-hidden="true">⠿</span><button class="course-main" data-edit="${esc(c.id)}" aria-label="แก้ไข ${esc(c.name)}"><span class="course-name">${esc(c.name)}</span><span class="course-meta">${courseGroup(c.category).name}${courseGroup(c.category).name!==cat(c.category).name?' · '+esc(cat(c.category).name):''}${c.isGenEd?' · GenEd':''}${!isCounted(c)?' · <span class="excluded-label">ปิดตา · ไม่นับในการคำนวณ</span>':''} · ${fmt(c.credits)} หน่วยกิต ${c.verify?'<span class="verify">⚑ ตรวจข้อมูล</span>':''}</span></button><select class="grade" aria-label="เกรด ${esc(c.name)}" data-grade="${esc(c.id)}">${gradeOptions(c.grade)}</select><button type="button" class="count-toggle" draggable="false" data-toggle-count="${esc(c.id)}" aria-pressed="${!isCounted(c)}" aria-label="${isCounted(c)?'ปิดตา ไม่นับ':'เปิดตา นับ'} ${esc(c.name)}" title="${isCounted(c)?'ปิดตา: ไม่นับวิชานี้ในการคำนวณ':'เปิดตา: นับวิชานี้อีกครั้ง'}">${eyeIcon(!isCounted(c))}</button></div>`;}
@@ -67,7 +74,7 @@ $('#years').onclick=e=>{const b=e.target.closest('[data-year]');if(b){year=b.dat
 $('#search').oninput=e=>{query=e.target.value.toLowerCase().trim();render();};
 $('#category-filter').innerHTML='<option value="all">ทุกหมวด</option>'+COURSE_GROUPS.map(g=>`<option value="${g.id}">${g.name}</option>`).join('');
 $('#category-filter').onchange=e=>{group=e.target.value;render();};
-$('#terms').onclick=e=>{const toggle=e.target.closest('[data-toggle-count]');if(toggle){const c=state.courses.find(c=>c.id===toggle.dataset.toggleCount);c.hidden=isCounted(c);save();toast(c.hidden?'ปิดตาวิชานี้แล้ว ข้อมูลเดิมยังอยู่ครบ':'เปิดตาวิชานี้แล้ว นำกลับมาคำนวณ');return;}const edit=e.target.closest('[data-edit]'),add=e.target.closest('[data-add]');if(edit)openCourse(edit.dataset.edit);if(add)openCourse(null,add.dataset.add);};
+$('#terms').onclick=e=>{const deletion=e.target.closest('[data-delete-term]');if(deletion){openDeleteTerm(deletion.dataset.deleteTerm);return;}const toggle=e.target.closest('[data-toggle-count]');if(toggle){const c=state.courses.find(c=>c.id===toggle.dataset.toggleCount);c.hidden=isCounted(c);save();toast(c.hidden?'ปิดตาวิชานี้แล้ว ข้อมูลเดิมยังอยู่ครบ':'เปิดตาวิชานี้แล้ว นำกลับมาคำนวณ');return;}const edit=e.target.closest('[data-edit]'),add=e.target.closest('[data-add]');if(edit)openCourse(edit.dataset.edit);if(add)openCourse(null,add.dataset.add);};
 $('#terms').onchange=e=>{if(e.target.matches('[data-grade]')){const c=state.courses.find(c=>c.id===e.target.dataset.grade);c.grade=e.target.value;save();}};
 $('#course-form').onsubmit=e=>{e.preventDefault();const f=e.target;const c={...(editing?state.courses.find(x=>x.id===editing):{}),id:editing||crypto.randomUUID(),name:f.elements.name.value.trim(),code:f.elements.code.value.trim(),credits:Number(f.elements.credits.value),isGenEd:f.elements.isGenEd.checked,grade:f.elements.grade.value,category:f.elements.category.value,term:f.elements.term.value,note:f.elements.note.value.trim(),verify:f.elements.verify.checked};if(!c.name)return;if(c.isGenEd)c.category='gen';if(editing)state.courses[state.courses.findIndex(x=>x.id===editing)]=c;else state.courses.push(c);$('#course-dialog').close();save();toast('บันทึกวิชาแล้ว ♡');};
 $('#course-form').elements.isGenEd.onchange=e=>{if(e.target.checked)$('#course-form').elements.category.value='gen';};
@@ -80,20 +87,54 @@ $('#terms').ondragend=()=>{dragged=null;document.querySelectorAll('.over,.draggi
 $('#settings').onclick=()=>{$('#settings-fields').innerHTML=`<label class="settings-row"><b>หน่วยกิตรวมขั้นต่ำ</b><input type="number" name="target" min="0" max="1000" step="0.5" value="${state.target}" required></label>`+state.categories.filter(c=>c.id!=='unassigned').map(c=>`<label class="settings-row">${esc(c.name)}<input type="number" name="${esc(c.id)}" min="0" max="1000" step="0.5" value="${c.min}" required></label>${c.id==='gen'?`<label class="settings-row settings-subrow">GenEd ที่ต้องผ่าน (วิชา)<input type="number" name="genEdMinCourses" min="0" max="100" step="1" value="${state.genEdMinCourses??4}" required></label><p class="small">GenEd อยู่ในศึกษาทั่วไป ไม่บวกหน่วยกิตซ้ำ</p>`:''}`).join('');$('#settings-dialog').showModal();settingsWarning();};
 function settingsWarning(){const f=$('#settings-form'),sum=state.categories.filter(c=>c.id!=='unassigned').reduce((s,c)=>s+Number(f.elements[c.id]?.value||0),0),target=Number(f.elements.target.value);$('#settings-warning').textContent=`รายหมวดรวม ${fmt(sum)} หน่วยกิต · ยอดรวมขั้นต่ำ ${fmt(target)} หน่วยกิต${sum!==target?' — ยอดสองส่วนไม่ตรงกัน กรุณาตรวจหลักสูตร':''} · ระบบตรวจทั้งรายหมวดและยอดรวม`;}$('#settings-form').oninput=settingsWarning;
 $('#settings-form').onsubmit=e=>{e.preventDefault();const f=e.target;state.target=Number(f.elements.target.value);if(f.elements.genEdMinCourses)state.genEdMinCourses=Number(f.elements.genEdMinCourses.value);for(const c of state.categories)if(c.id!=='unassigned')c.min=Number(f.elements[c.id].value);$('#settings-dialog').close();save();toast('บันทึกเกณฑ์แล้ว');};
-$('#add-term').onclick=()=>{const f=$('#term-form');f.reset();f.elements.afterTerm.innerHTML='<option value="">ก่อนเทอมแรก</option>'+state.terms.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');f.elements.afterTerm.value=state.terms.at(-1).id;$('#term-dialog').showModal();};
-$('#term-form').onsubmit=e=>{e.preventDefault();const f=e.target,name=f.elements.name.value.trim();if(!name)return;const after=f.elements.afterTerm.value,index=after?state.terms.findIndex(t=>t.id===after)+1:0;if(after&&!index){toast('รายการเทอมเปลี่ยน กรุณาเปิดหน้าต่างเพิ่มเทอมอีกครั้ง');return;}state.terms.splice(index,0,{id:crypto.randomUUID(),name,year:Number(f.elements.year.value)});year='all';$('#term-dialog').close();save();toast('เพิ่มเทอมแล้ว');};
-function renderTermOrder(){
- $('#term-order-list').innerHTML=termOrderDraft.map((id,index)=>{
-  const term=state.terms.find(t=>t.id===id);
-  if(!term)return '';
-  const count=state.courses.filter(c=>c.term===id).length;
-  return `<div class="term-order-row" data-order-row="${esc(id)}"><span class="term-order-name">${esc(term.name)}<small>${count} วิชา</small></span><label class="term-position">ลำดับ<select data-order-position="${esc(id)}" aria-label="ลำดับ ${esc(term.name)}">${termOrderDraft.map((_,i)=>`<option value="${i}" ${i===index?'selected':''}>${i+1}</option>`).join('')}</select></label><div class="term-order-arrows"><button type="button" class="button" data-order-up="${esc(id)}" aria-label="เลื่อน ${esc(term.name)} ขึ้น" ${index===0?'disabled':''}>↑</button><button type="button" class="button" data-order-down="${esc(id)}" aria-label="เลื่อน ${esc(term.name)} ลง" ${index===termOrderDraft.length-1?'disabled':''}>↓</button></div></div>`;
- }).join('');
+function updateTermFields(){
+ const f=$('#term-form'),y=Number(f.elements.year.value),same=orderedTerms(state.terms).filter(t=>t.year===y),summer=f.elements.kind.value==='summer';
+ if(f.elements.name.dataset.custom!=='true')f.elements.name.value=`ปี ${y} / ${summer?'ซัมเมอร์':'เทอม '+(same.filter(t=>termKind(t)==='regular').length+1)}`;
+ f.elements.afterTerm.innerHTML=`<option value="">ต้นปี ${y}</option>`+same.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+ f.elements.afterTerm.value=(summer?same.at(-1):same.filter(t=>termKind(t)==='regular').at(-1))?.id||'';
 }
-function moveTerm(id,position){const index=termOrderDraft.indexOf(id);if(index<0||!Number.isInteger(position)||position<0||position>=termOrderDraft.length)return;termOrderDraft.splice(index,1);termOrderDraft.splice(position,0,id);renderTermOrder();}
-$('#edit-term-order').onclick=()=>{termOrderDraft=state.terms.map(t=>t.id);renderTermOrder();$('#term-order-dialog').showModal();};
+$('#add-term').onclick=()=>{if(state.terms.length>=100){toast('เพิ่มได้สูงสุด 100 เทอม');return;}const f=$('#term-form');f.reset();f.elements.year.value=year==='all'?Math.max(...state.terms.map(t=>t.year)):+year;f.elements.name.dataset.custom='false';updateTermFields();$('#term-dialog').showModal();};
+$('#term-form').elements.kind.onchange=updateTermFields;
+$('#term-form').elements.year.oninput=updateTermFields;
+$('#term-form').elements.name.oninput=e=>{e.target.dataset.custom='true';};
+$('#term-form').onsubmit=e=>{e.preventDefault();const f=e.target,name=f.elements.name.value.trim();if(!name)return;try{state=insertTerm(state,{id:crypto.randomUUID(),name,year:Number(f.elements.year.value),kind:f.elements.kind.value},f.elements.afterTerm.value);}catch{toast('รายการเทอมเปลี่ยน กรุณาเปิดหน้าต่างเพิ่มเทอมอีกครั้ง');return;}year='all';$('#term-dialog').close();save();toast('เพิ่มเทอมแล้ว');};
+function openDeleteTerm(id){
+ if(state.terms.length<=1){toast('ต้องเหลืออย่างน้อย 1 เทอม');return;}
+ const term=state.terms.find(t=>t.id===id);if(!term)return;deletingTerm=id;
+ const courses=state.courses.filter(c=>c.term===id),terms=orderedTerms(state.terms),destinations=terms.filter(t=>t.id!==id),f=$('#delete-term-form');
+ $('#delete-term-summary').textContent=`${term.name} · ${courses.length} วิชา`;
+ $('#delete-term-destination').hidden=!courses.length;f.elements.destination.required=!!courses.length;
+ f.elements.destination.innerHTML=destinations.map(t=>`<option value="${esc(t.id)}">${esc(t.name)}</option>`).join('');
+ f.elements.destination.value=(terms[terms.indexOf(term)-1]||destinations[0]).id;
+ $('#delete-term-note').textContent=courses.length?'วิชา เกรด หน่วยกิต โน้ต และสถานะปิดตาจะย้ายไปด้วยทั้งหมด':'เทอมนี้ยังไม่มีวิชา ลบได้โดยไม่เปลี่ยนวิชาในเทอมอื่น';
+ $('#confirm-delete-term').textContent=courses.length?'ย้ายวิชาและลบเทอม':'ลบเทอม';$('#delete-term-dialog').showModal();
+}
+$('#delete-term-form').onsubmit=e=>{e.preventDefault();try{state=removeTerm(state,deletingTerm,e.target.elements.destination.value);}catch{toast('ลบเทอมไม่ได้ กรุณาตรวจเทอมที่ต้องการย้ายวิชา');return;}deletingTerm=null;year='all';$('#delete-term-dialog').close();save();toast('ลบเทอมแล้ว');};
+function renderTermOrder(){
+ const terms=termOrderDraft.map(id=>state.terms.find(t=>t.id===id)).filter(Boolean);
+ $('#term-order-list').innerHTML=termsByYear(terms).map(g=>`<h3 class="term-order-year">ปี ${g.year}</h3>${g.terms.map((term,index)=>{
+  const count=state.courses.filter(c=>c.term===term.id).length;
+  return `<div class="term-order-row ${termDrag?.id===term.id?'term-dragging':''}" data-order-row="${esc(term.id)}"><button type="button" class="term-order-handle" data-order-handle="${esc(term.id)}" aria-label="ลาก ${esc(term.name)} เพื่อจัดลำดับ ใช้ปุ่มลูกศรขึ้นหรือลงได้">⠿</button><span class="term-order-name">${esc(term.name)}<small>${termKind(term)==='summer'?'ซัมเมอร์ · ':''}${count} วิชา</small></span><label class="term-position">ลำดับ<select data-order-position="${esc(term.id)}" aria-label="ลำดับ ${esc(term.name)}">${g.terms.map((t,i)=>`<option value="${termOrderDraft.indexOf(t.id)}" ${i===index?'selected':''}>${i+1}</option>`).join('')}</select></label><div class="term-order-arrows"><button type="button" class="button" data-order-up="${esc(term.id)}" aria-label="เลื่อน ${esc(term.name)} ขึ้น" ${index===0?'disabled':''}>↑</button><button type="button" class="button" data-order-down="${esc(term.id)}" aria-label="เลื่อน ${esc(term.name)} ลง" ${index===g.terms.length-1?'disabled':''}>↓</button></div></div>`;
+ }).join('')}`).join('');
+}
+function moveTerm(id,position){const moved=moveTermWithinYear(state.terms,termOrderDraft,id,position);if(moved===termOrderDraft)return;termOrderDraft=moved;renderTermOrder();}
+$('#edit-term-order').onclick=()=>{termOrderDraft=orderedTerms(state.terms).map(t=>t.id);renderTermOrder();$('#term-order-dialog').showModal();$('#term-order-list').scrollTop=0;};
 $('#term-order-list').onchange=e=>{if(e.target.matches('[data-order-position]'))moveTerm(e.target.dataset.orderPosition,Number(e.target.value));};
 $('#term-order-list').onclick=e=>{const up=e.target.closest('[data-order-up]'),down=e.target.closest('[data-order-down]');if(up)moveTerm(up.dataset.orderUp,termOrderDraft.indexOf(up.dataset.orderUp)-1);if(down)moveTerm(down.dataset.orderDown,termOrderDraft.indexOf(down.dataset.orderDown)+1);};
+$('#term-order-list').onkeydown=e=>{const handle=e.target.closest('[data-order-handle]');if(handle&&['ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();const id=handle.dataset.orderHandle;moveTerm(id,termOrderDraft.indexOf(id)+(e.key==='ArrowUp'?-1:1));$('#term-order-list').querySelector(`[data-order-handle="${CSS.escape(id)}"]`)?.focus();}};
+function dragTermAtPointer(){
+ if(!termDrag)return;
+ const list=$('#term-order-list'),bounds=list.getBoundingClientRect(),y=termDrag.y;
+ if(y<bounds.top+40)list.scrollTop-=12;else if(y>bounds.bottom-40)list.scrollTop+=12;
+ const row=document.elementFromPoint(termDrag.x,y)?.closest('[data-order-row]');
+ if(row&&row.dataset.orderRow!==termDrag.id){const index=termOrderDraft.indexOf(termDrag.id),target=termOrderDraft.indexOf(row.dataset.orderRow),rect=row.getBoundingClientRect();if((index<target&&y>rect.top+rect.height/2)||(index>target&&y<rect.top+rect.height/2))moveTerm(termDrag.id,target);}
+ termDrag.frame=requestAnimationFrame(dragTermAtPointer);
+}
+$('#term-order-list').onpointerdown=e=>{const handle=e.target.closest('[data-order-handle]');if(!handle||e.button!==0)return;e.preventDefault();termDrag={id:handle.dataset.orderHandle,pointer:e.pointerId,x:e.clientX,y:e.clientY};$('#term-order-list').setPointerCapture(e.pointerId);renderTermOrder();dragTermAtPointer();};
+$('#term-order-list').onpointermove=e=>{if(termDrag&&e.pointerId===termDrag.pointer){e.preventDefault();termDrag.x=e.clientX;termDrag.y=e.clientY;}};
+function endTermDrag(){if(!termDrag)return;const drag=termDrag;termDrag=null;cancelAnimationFrame(drag.frame);const list=$('#term-order-list');if(list.hasPointerCapture(drag.pointer))list.releasePointerCapture(drag.pointer);renderTermOrder();}
+$('#term-order-list').onpointerup=endTermDrag;$('#term-order-list').onpointercancel=endTermDrag;$('#term-order-list').onlostpointercapture=endTermDrag;
+$('#term-order-dialog').addEventListener('close',endTermDrag);
 $('#term-order-form').onsubmit=e=>{e.preventDefault();try{state=reorderTerms(state,termOrderDraft);}catch{toast('รายการเทอมเปลี่ยน กรุณาปิดแล้วเปิดแก้ลำดับใหม่');return;}year='all';$('#term-order-dialog').close();save();toast('บันทึกลำดับเทอมแล้ว');};
 
 function exportPlan(){const blob=new Blob([JSON.stringify(state,null,2)],{type:'application/json'}),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='grade-garden-backup.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);toast('สำรองข้อมูลแล้ว เก็บไฟล์นี้ไว้ด้วยนะ ♡');}

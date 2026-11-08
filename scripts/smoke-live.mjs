@@ -159,11 +159,17 @@ try {
   assert.ok((await b.locator('#honors-recommendations').textContent()).includes('ตั้งเป้า'));
   await b.setViewportSize({width:390,height:844});assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await b.setViewportSize({width:1440,height:1000});
   // Add summer between academic terms, then edit order without losing courses.
-  await b.locator('#add-term').click();await b.locator('#term-form [name=name]').fill('ปี 1 / ฤดูร้อน');await b.locator('#term-form [name=year]').fill('1');await b.locator('#term-form [name=afterTerm]').selectOption('t1');
+  await b.locator('#add-term').click();await b.locator('#term-form [name=kind]').selectOption('summer');await b.locator('#term-form [name=name]').fill('ปี 1 / ฤดูร้อน');await b.locator('#term-form [name=year]').fill('1');await b.locator('#term-form [name=afterTerm]').selectOption('t1');
   await b.locator('#term-form button[type=submit]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
   const afterSummer=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
-  const summer=afterSummer.terms.find(t=>t.name==='ปี 1 / ฤดูร้อน');assert.equal(afterSummer.terms[2].id,summer.id);
+  const summer=afterSummer.terms.find(t=>t.name==='ปี 1 / ฤดูร้อน');assert.equal(afterSummer.terms[2].id,summer.id);assert.equal(summer.kind,'summer');
+  assert.deepEqual(await b.locator('[data-planner-year="1"] .term').evaluateAll(nodes=>nodes.map(n=>n.dataset.term)),['t0','t1',summer.id]);
+  const yearOne=await b.locator('[data-planner-year="1"] .term').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().top));assert.ok(yearOne.every(y=>Math.abs(y-yearOne[0])<1));
+  assert.ok((await b.locator('[data-planner-year="2"]').boundingBox()).y>(await b.locator('[data-planner-year="1"]').boundingBox()).y);
+  await b.locator('[data-planner-year="1"]').screenshot({path:'/tmp/grade-garden-year-summer.png'});
+  await b.locator('[data-planner-year="1"] .year-terms').evaluate(el=>el.scrollLeft=el.scrollWidth);const summerScroll=await b.locator('[data-planner-year="1"] .year-terms').evaluate(el=>el.scrollLeft);assert.ok(summerScroll>0);
   await b.locator(`[data-add="${summer.id}"]`).click();await b.locator('#course-form [name=name]').fill('SUMMER TEST');await b.locator('#course-form [name=credits]').fill('3');await b.locator('#course-form [name=grade]').selectOption('B');await b.locator('#course-form button[type=submit]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.ok(Math.abs((await b.locator('[data-planner-year="1"] .year-terms').evaluate(el=>el.scrollLeft))-summerScroll)<2,'saving a summer course must retain horizontal scroll position');
   const orderBefore=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
   const globalBefore=await b.locator('#stats .stat-value').first().textContent();
   assert.ok((await b.locator('[data-term=t1] .term-metrics span').nth(1).textContent()).includes('4.00'));
@@ -177,7 +183,33 @@ try {
   const orderAfter=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
   const expectedOrder=structuredClone(orderBefore);const removed=expectedOrder.terms.splice(2,1)[0];expectedOrder.terms.splice(1,0,removed);assert.deepEqual(orderAfter,expectedOrder);
   await b.reload();await b.locator('#app-main').waitFor({state:'visible'});assert.equal((await b.locator('.term').evaluateAll(nodes=>nodes.map(n=>n.dataset.term)))[1],summer.id);
-  await b.setViewportSize({width:390,height:844});await b.locator('#edit-term-order').click();await b.locator(`[data-order-down="${summer.id}"]`).click();await b.locator(`[data-order-up="${summer.id}"]`).click();assert.equal((await b.locator('[data-order-row]').evaluateAll(nodes=>nodes.map(n=>n.dataset.orderRow)))[1],summer.id);assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await b.locator('#term-order-dialog .dialog-actions [data-close]').click();await b.setViewportSize({width:1440,height:1000});
+  // Real mouse dragging uses the handle; only same-year rows can move.
+  await b.locator('#edit-term-order').click();
+  const dragHandle=await b.locator(`[data-order-handle="${summer.id}"]`).boundingBox(),dropRow=await b.locator('[data-order-row=t1]').boundingBox();
+  await b.mouse.move(dragHandle.x+dragHandle.width/2,dragHandle.y+dragHandle.height/2);await b.mouse.down();await b.mouse.move(dropRow.x+30,dropRow.y+dropRow.height-8,{steps:12});
+  await b.waitForFunction(id=>document.querySelectorAll('[data-order-row]')[2]?.dataset.orderRow===id,summer.id);await b.mouse.up();
+  await b.locator('#term-order-dialog .dialog-actions [data-close]').click();
+  await b.setViewportSize({width:390,height:844});await b.locator('#edit-term-order').click();
+  assert.ok(await b.locator('#term-order-list').evaluate(el=>el.scrollHeight>el.clientHeight));await b.locator('#term-order-list').evaluate(el=>el.scrollTop=el.scrollHeight);assert.ok(await b.locator('#term-order-list').evaluate(el=>el.scrollTop>0));await b.locator('#term-order-list').evaluate(el=>el.scrollTop=0);
+  const touchSession=await two.newCDPSession(b),touchHandle=await b.locator(`[data-order-handle="${summer.id}"]`).boundingBox(),touchTarget=await b.locator('[data-order-row=t1]').boundingBox();
+  await touchSession.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:touchHandle.x+touchHandle.width/2,y:touchHandle.y+touchHandle.height/2}]});
+  await touchSession.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:touchTarget.x+25,y:touchTarget.y+touchTarget.height-8}]});
+  await b.waitForFunction(id=>document.querySelectorAll('[data-order-row]')[2]?.dataset.orderRow===id,summer.id);await touchSession.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await touchSession.detach();
+  await b.locator(`[data-order-handle="${summer.id}"]`).press('ArrowUp');assert.equal((await b.locator('[data-order-row]').evaluateAll(nodes=>nodes.map(n=>n.dataset.orderRow)))[1],summer.id);
+  await b.locator('#term-order-dialog').screenshot({path:'/tmp/grade-garden-order-mobile.png'});await b.locator(`[data-order-down="${summer.id}"]`).click();await b.locator(`[data-order-up="${summer.id}"]`).click();assert.equal((await b.locator('[data-order-row]').evaluateAll(nodes=>nodes.map(n=>n.dataset.orderRow)))[1],summer.id);assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await b.locator('#term-order-dialog .dialog-actions [data-close]').click();await b.setViewportSize({width:1440,height:1000});
+  // Deleting a populated term preserves every course by explicitly moving it.
+  await b.locator(`[data-delete-term="${summer.id}"]`).click();assert.equal(await b.locator('#confirm-delete-term').textContent(),'ย้ายวิชาและลบเทอม');
+  await b.locator('#delete-term-dialog .dialog-actions [data-close]').click();assert.equal(await b.locator(`[data-term="${summer.id}"]`).count(),1);
+  await b.locator(`[data-delete-term="${summer.id}"]`).click();await b.locator('#delete-term-form [name=destination]').selectOption('t1');await b.locator('#confirm-delete-term').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  const afterDelete=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
+  const expectedDelete=structuredClone(orderAfter);expectedDelete.terms=expectedDelete.terms.filter(t=>t.id!==summer.id);expectedDelete.courses=expectedDelete.courses.map(c=>c.term===summer.id?{...c,term:'t1'}:c);assert.deepEqual(afterDelete,expectedDelete);
+  assert.equal(await b.locator(`[data-term="${summer.id}"]`).count(),0);assert.equal(await b.locator('#stats .stat-value').first().textContent(),globalBefore);
+  // A regular term in a new year gets its own row, and an empty term can be removed.
+  await b.locator('#add-term').click();await b.locator('#term-form [name=kind]').selectOption('regular');await b.locator('#term-form [name=year]').fill('5');assert.equal(await b.locator('#term-form [name=name]').inputValue(),'ปี 5 / เทอม 1');
+  await b.locator('#term-form button[type=submit]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  const emptyTerm=await b.locator('[data-planner-year="5"] .term').getAttribute('data-term');await b.locator(`[data-delete-term="${emptyTerm}"]`).click();assert.equal(await b.locator('#delete-term-destination').isVisible(),false);await b.locator('#confirm-delete-term').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  assert.deepEqual((await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data,afterDelete);
+  await b.reload();await b.locator('#app-main').waitFor({state:'visible'});assert.equal(await b.locator(`[data-term="${summer.id}"]`).count(),0);
   await b.locator('#logout').click(); await b.locator('#account-screen').waitFor({ state: 'visible' });
   await login(b, accounts[1]);
   assert.equal(await b.locator('[data-grade=c0]').inputValue(), '');
@@ -223,7 +255,7 @@ try {
   await b.reload();await b.locator('#app-main').waitFor({state:'visible'});
   assert.equal(await b.locator('[data-honors-target="3"]').getAttribute('aria-pressed'),'true');
   assert.deepEqual(errors, []);
-  console.log('PASS LIVE: summer insertion, semester reorder/cancel/mobile controls and persistence, intermediate GPAX follows new order, final GPA/courses/grades/notes preserved, account isolation and target choices.');
+  console.log('PASS LIVE: regular/summer creation, horizontal year grouping/scroll retention, mouse/touch/keyboard reorder, scrollable mobile editor, cancel, safe empty/populated term deletion, reload persistence, weighted GPAX and account isolation.');
 } finally {
   await browser?.close();
   for (const id of ids) {

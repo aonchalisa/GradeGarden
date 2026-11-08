@@ -1,4 +1,5 @@
 import { metrics, passed, isCounted, POINTS } from './model.js';
+import { orderedTerms } from './terms.js';
 
 export const COURSE_GROUPS = [
   { id: 'required', name: 'บังคับเรียน', categories: ['gen', 'science', 'foundation', 'core'], color: '#b8789b' },
@@ -82,7 +83,7 @@ export function honorsPlanAdvisor(plan) {
   const simulatedGpax = simulatedCredits ? simulatedPoints / simulatedCredits : null;
   return {
     ...base, pendingGpa, additionalGpa, extraCredits, endCredits, endPoints, endGpax,
-    endTermName: plan.terms.at(-1)?.name || 'ท้ายแผน',
+    endTermName: orderedTerms(plan.terms).at(-1)?.name || 'ท้ายแผน',
     simulatedGpax, totalPlanCredits: recorded.credits,
     goals: HONORS.map(goal => {
       const needed = simulatedCredits ? creditsToTarget(simulatedPoints, simulatedCredits, goal.target, additionalGpa) : null;
@@ -127,7 +128,7 @@ export function recommendedHonorsPlans(plan) {
   const allA = pending.map(c => ({ id: c.id, name: c.name, credits: c.credits, targetGrade: 'A' }));
   const allAPoints = recorded.points + 4 * pendingCredits;
   return { currentGpax: recorded.gpa, gradedCredits: recorded.gpaCredits, pendingCredits, pendingCount: pending.length,
-    actualComplete, needsReview, endTermName: plan.terms.at(-1)?.name || 'ท้ายแผน',
+    actualComplete, needsReview, endTermName: orderedTerms(plan.terms).at(-1)?.name || 'ท้ายแผน',
     totalPlanCredits: recorded.credits,
     goals: HONORS.map(goal => {
       const actualReached = recorded.gpa !== null && (goal.strict ? recorded.points-goal.target*recorded.gpaCredits>1e-10 : recorded.gpa+1e-10>=goal.target);
