@@ -32,9 +32,9 @@
 .year-terms>.term{min-width:0;scroll-snap-align:start}
 .term-title-row{gap:8px;align-items:flex-start}
 .term-title-row h3{min-width:0;overflow-wrap:anywhere}
-.term-tools{display:flex;gap:8px;align-items:center;flex-shrink:0}
 .delete-term{font-size:11px;color:#a16a7a;border:0;border-radius:6px;background:#fff8fa;padding:5px 7px}
 .delete-term:disabled{opacity:.45;cursor:default}
+.term-order-name .delete-term{display:block;margin-top:6px}
 .summer-badge{display:block;width:fit-content;font-size:10px;font-weight:600;color:#9d722f;background:#fbefcf;border-radius:5px;padding:2px 6px;margin-top:5px}
 .summer-term{background:#f7f0e5;border-color:#eadfc9}
 #term-order-dialog{padding:0;max-height:min(90dvh,780px);overflow:hidden}

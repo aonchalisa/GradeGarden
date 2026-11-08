@@ -197,17 +197,24 @@ try {
   await b.waitForFunction(id=>document.querySelectorAll('[data-order-row]')[2]?.dataset.orderRow===id,summer.id);await touchSession.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await touchSession.detach();
   await b.locator(`[data-order-handle="${summer.id}"]`).press('ArrowUp');assert.equal((await b.locator('[data-order-row]').evaluateAll(nodes=>nodes.map(n=>n.dataset.orderRow)))[1],summer.id);
   await b.locator('#term-order-dialog').screenshot({path:'/tmp/grade-garden-order-mobile.png'});await b.locator(`[data-order-down="${summer.id}"]`).click();await b.locator(`[data-order-up="${summer.id}"]`).click();assert.equal((await b.locator('[data-order-row]').evaluateAll(nodes=>nodes.map(n=>n.dataset.orderRow)))[1],summer.id);assert.ok(await b.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));await b.locator('#term-order-dialog .dialog-actions [data-close]').click();await b.setViewportSize({width:1440,height:1000});
-  // Deleting a populated term preserves every course by explicitly moving it.
+  // Deletion is available only in semester management, preserving unsaved order.
+  assert.equal(await b.locator('#terms [data-delete-term]').count(),0);assert.equal(await b.locator('#edit-term-order').textContent(),'จัดการเทอม');
+  await b.locator('#edit-term-order').click();await b.locator('[data-order-position=t1]').selectOption({value:'0'});
   await b.locator(`[data-delete-term="${summer.id}"]`).click();assert.equal(await b.locator('#confirm-delete-term').textContent(),'ย้ายวิชาและลบเทอม');
   await b.locator('#delete-term-dialog .dialog-actions [data-close]').click();assert.equal(await b.locator(`[data-term="${summer.id}"]`).count(),1);
   await b.locator(`[data-delete-term="${summer.id}"]`).click();await b.locator('#delete-term-form [name=destination]').selectOption('t1');await b.locator('#confirm-delete-term').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
-  const afterDelete=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
+  let afterDelete=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
   const expectedDelete=structuredClone(orderAfter);expectedDelete.terms=expectedDelete.terms.filter(t=>t.id!==summer.id);expectedDelete.courses=expectedDelete.courses.map(c=>c.term===summer.id?{...c,term:'t1'}:c);assert.deepEqual(afterDelete,expectedDelete);
   assert.equal(await b.locator(`[data-term="${summer.id}"]`).count(),0);assert.equal(await b.locator('#stats .stat-value').first().textContent(),globalBefore);
+  assert.equal(await b.locator('#term-order-dialog').isVisible(),true);assert.equal(await b.locator(`[data-order-row="${summer.id}"]`).count(),0);
+  assert.equal((await b.locator('[data-order-row]').evaluateAll(nodes=>nodes.map(n=>n.dataset.orderRow)))[0],'t1','deletion must retain the pending order of surviving terms');
+  await b.locator('#term-order-form button[type=submit]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  const afterManagement=(await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data;
+  const expectedManagement=structuredClone(afterDelete);[expectedManagement.terms[0],expectedManagement.terms[1]]=[expectedManagement.terms[1],expectedManagement.terms[0]];assert.deepEqual(afterManagement,expectedManagement);afterDelete=afterManagement;
   // A regular term in a new year gets its own row, and an empty term can be removed.
   await b.locator('#add-term').click();await b.locator('#term-form [name=kind]').selectOption('regular');await b.locator('#term-form [name=year]').fill('5');assert.equal(await b.locator('#term-form [name=name]').inputValue(),'ปี 5 / เทอม 1');
   await b.locator('#term-form button[type=submit]').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
-  const emptyTerm=await b.locator('[data-planner-year="5"] .term').getAttribute('data-term');await b.locator(`[data-delete-term="${emptyTerm}"]`).click();assert.equal(await b.locator('#delete-term-destination').isVisible(),false);await b.locator('#confirm-delete-term').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
+  const emptyTerm=await b.locator('[data-planner-year="5"] .term').getAttribute('data-term');await b.locator('#edit-term-order').click();await b.locator(`[data-delete-term="${emptyTerm}"]`).click();assert.equal(await b.locator('#delete-term-destination').isVisible(),false);await b.locator('#confirm-delete-term').click();await b.waitForFunction(()=>document.querySelector('#save-status').dataset.kind==='saved');
   assert.deepEqual((await admin.from('study_plans').select('data').eq('user_id',ids[0]).single()).data.data,afterDelete);
   await b.reload();await b.locator('#app-main').waitFor({state:'visible'});assert.equal(await b.locator(`[data-term="${summer.id}"]`).count(),0);
   await b.locator('#logout').click(); await b.locator('#account-screen').waitFor({ state: 'visible' });
@@ -269,7 +276,7 @@ try {
   const third=await browser.newContext(),thirdPage=await third.newPage();await login(thirdPage,accounts[1]);assert.equal(await thirdPage.locator('#custom-gpax').inputValue(),'3.40');assert.equal(await thirdPage.locator('[data-honors-target="custom"]').getAttribute('aria-pressed'),'true');await third.close();
   assert.deepEqual((await clientB.from('study_plans').select('data').eq('user_id',ids[1]).single()).data.data,expectedCustom);
   assert.deepEqual(errors, []);
-  console.log('PASS LIVE: regular/summer creation, horizontal year grouping/scroll retention, mouse/touch/keyboard reorder, scrollable mobile editor, cancel, safe empty/populated term deletion, reload persistence, custom GPAX/validation/4.00 feasibility, preserved grades and cross-device account isolation.');
+  console.log('PASS LIVE: regular/summer creation, horizontal year grouping/scroll retention, mouse/touch/keyboard reorder, scrollable mobile editor, cancel, deletion inside management only with pending order preserved, safe empty/populated term deletion, reload persistence, custom GPAX/validation/4.00 feasibility, preserved grades and cross-device account isolation.');
 } finally {
   await browser?.close();
   for (const id of ids) {
